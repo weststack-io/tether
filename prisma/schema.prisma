@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model RegulatoryItem {
+  id              String   @id @default(cuid())
+  sourceUrl       String
+  regulator       String   // "SEC" | "FINRA" | "CFPB" | "OCC"
+  publicationDate DateTime
+  documentType    String   // "final_rule" | "proposed_rule" | "enforcement" | "bulletin" | "notice" | "guidance" | "letter"
+  title           String
+  fullText        String
+  summary         String?
+  isRelevant      Boolean?
+  ingestionRunId  String
+  ingestionRun    IngestionRun @relation(fields: [ingestionRunId], references: [id])
+  alerts          Alert[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PolicyDocument {
+  id          String   @id @default(cuid())
+  title       String
+  domain      String   // "bsa_aml" | "complaint_handling" | "fair_lending" | "reg_e" | "reg_z" | "vendor_management" | "info_security" | "cip" | "overdraft" | "marketing"
+  fullText    String
+  version     String   @default("1.0")
+  isSynthetic Boolean  @default(true)
+  chunks      PolicyChunk[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PolicyChunk {
+  id               String   @id @default(cuid())
+  policyDocumentId String
+  policyDocument   PolicyDocument @relation(fields: [policyDocumentId], references: [id])
+  sectionHeading   String
+  content          String
+  chunkIndex       Int
+  embedding        String?  // JSON-serialized float array
+  alerts           Alert[]
+  createdAt        DateTime @default(now())
+}
+
+model Alert {
+  id                  String   @id @default(cuid())
+  regulatoryItemId    String
+  regulatoryItem      RegulatoryItem @relation(fields: [regulatoryItemId], references: [id])
+  policyChunkId       String
+  policyChunk         PolicyChunk @relation(fields: [policyChunkId], references: [id])
+  classification      String   // "aligned" | "drifted" | "contradicted" | "ambiguous" | "no_material_impact"
+  confidence          Float    // 0.0 - 1.0
+  severity            String   // "high" | "medium" | "low"
+  explanation         String
+  regulatoryQuote     String
+  policyQuote         String
+  regulatorySourceUrl String
+  policyReference     String   // "PolicyTitle > SectionHeading"
+  status              String   @default("open") // "open" | "accepted" | "dismissed" | "escalated" | "snoozed"
+  dismissReason       String?
+  escalationNote      String?
+  snoozeUntil         DateTime?
+  auditEntries        AuditEntry[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model AuditEntry {
+  id          String   @id @default(cuid())
+  alertId     String?
+  alert       Alert?   @relation(fields: [alertId], references: [id])
+  actor       String   // "system" | "reviewer"
+  action      String   // "created" | "accepted" | "dismissed" | "escalated" | "snoozed" | "reopened"
+  beforeState String?  // JSON of prior status
+  afterState  String?  // JSON of new status
+  note        String?
+  timestamp   DateTime @default(now())
+}
+
+model IngestionRun {
+  id              String   @id @default(cuid())
+  trigger         String   // "scheduled" | "manual"
+  status          String   // "running" | "completed" | "failed"
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  itemsProcessed  Int      @default(0)
+  itemsFlagged    Int      @default(0)
+  itemsSuppressed Int      @default(0)
+  errors          String?  // JSON array of error messages
+  regulatoryItems RegulatoryItem[]
+}
+
+model LlmCallLog {
+  id          String   @id @default(cuid())
+  purpose     String   // "relevance" | "classification" | "explanation"
+  model       String
+  prompt      String
+  response    String
+  tokenInput  Int
+  tokenOutput Int
+  latencyMs   Int
+  createdAt   DateTime @default(now())
+}

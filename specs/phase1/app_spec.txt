@@ -1,0 +1,572 @@
+================================================================================
+  Tether — Application Specification (Phase 1 / MVP)
+  Regulatory Drift Detector
+================================================================================
+
+This document is the technical reference for coding agents. It specifies data
+models, API routes, pipeline logic, scoring rules, UI layout, and architectural
+decisions. Read this before implementing any feature. The PRD
+(RegulatoryDriftDetector_PRD.md) is the source of truth for requirements; this
+spec is the source of truth for implementation.
+
+================================================================================
+  1. TECH STACK
+================================================================================
+
+Framework:       Next.js 16.2.4 (App Router)
+Language:        TypeScript (strict mode)
+Database:        SQLite via Prisma ORM (file: ./prisma/dev.db)
+Vector Store:    Local vector store using embeddings stored in SQLite
+                 (cosine similarity computed in application code)
+AI / LLM:       Claude API (anthropic SDK) for classification & explanation
+Embeddings:     OpenAI text-embedding-3-small (configurable via env)
+Styling:        Tailwind CSS + shadcn/ui components
+Testing:        Jest (unit + integration), Playwright MCP (UI verification)
+Package Mgr:    npm
+
+Environment variables (.env.local):
+  DATABASE_URL=file:./prisma/dev.db
+  ANTHROPIC_API_KEY=<key>
+  EMBEDDING_PROVIDER=openai          # or "voyage"
+  OPENAI_API_KEY=<key>               # if using openai embeddings
+  VOYAGE_API_KEY=<key>               # if using voyage embeddings
+  EMBEDDING_MODEL=text-embedding-3-small
+  CLAUDE_MODEL=claude-opus-4.7
+  INGESTION_INTERVAL_HOURS=6
+  LOG_LEVEL=info
+
+================================================================================
+  2. PROJECT STRUCTURE
+================================================================================
+
+tether/
+├── prisma/
+│   └── schema.prisma
+│   └── seed.ts                      # Seed dummy policy corpus + demo alerts
+├── src/
+│   ├── app/                         # Next.js App Router pages
+│   │   ├── layout.tsx               # Root layout with sidebar nav
+│   │   ├── page.tsx                 # Dashboard (default route)
+│   │   ├── alerts/
+│   │   │   ├── page.tsx             # Alert list view
+│   │   │   └── [id]/
+│   │   │       └── page.tsx         # Alert detail view
+│   │   ├── ingestion/
+│   │   │   └── page.tsx             # Ingestion log view
+│   │   └── api/
+│   │       ├── alerts/
+│   │       │   ├── route.ts         # GET /api/alerts
+│   │       │   └── [id]/
+│   │       │       ├── route.ts     # GET /api/alerts/:id
+│   │       │       └── action/
+│   │       │           └── route.ts # POST /api/alerts/:id/action
+│   │       ├── dashboard/
+│   │       │   └── stats/
+│   │       │       └── route.ts     # GET /api/dashboard/stats
+│   │       ├── ingestion/
+│   │       │   ├── trigger/
+│   │       │   │   └── route.ts     # POST /api/ingestion/trigger
+│   │       │   └── log/
+│   │       │       └── route.ts     # GET /api/ingestion/log
+│   │       └── health/
+│   │           └── route.ts         # GET /api/health
+│   ├── lib/
+│   │   ├── db.ts                    # Prisma client singleton
+│   │   ├── ai/
+│   │   │   ├── embeddings.ts        # Embedding generation
+│   │   │   ├── classifier.ts        # Drift classification LLM calls
+│   │   │   └── prompts.ts           # All LLM prompt templates
+│   │   ├── ingestion/
+│   │   │   ├── scheduler.ts         # Ingestion scheduling (stub — see Section 6)
+│   │   │   ├── fetcher.ts           # HTTP fetching with error handling
+│   │   │   ├── parsers/
+│   │   │   │   ├── sec.ts           # SEC RSS + document parser
+│   │   │   │   ├── finra.ts         # FINRA notices parser
+│   │   │   │   ├── cfpb.ts          # CFPB publications parser
+│   │   │   │   └── occ.ts           # OCC bulletins parser
+│   │   │   └── pipeline.ts          # Orchestrates full ingestion run
+│   │   ├── drift/
+│   │   │   ├── detector.ts          # Drift detection pipeline orchestrator
+│   │   │   ├── retriever.ts         # Semantic similarity retrieval
+│   │   │   ├── scorer.ts            # Confidence + severity scoring
+│   │   │   └── citation.ts          # Citation extraction + verification
+│   │   ├── audit.ts                 # Audit log helper
+│   │   └── vectors.ts              # Vector math (cosine similarity, etc.)
+│   ├── components/
+│   │   ├── ui/                      # shadcn/ui primitives
+│   │   ├── dashboard/
+│   │   │   ├── SeverityCard.tsx
+│   │   │   ├── RegulatorChart.tsx
+│   │   │   ├── DomainChart.tsx
+│   │   │   ├── RecentActivity.tsx
+│   │   │   └── TriggerButton.tsx
+│   │   ├── alerts/
+│   │   │   ├── AlertTable.tsx
+│   │   │   ├── AlertFilters.tsx
+│   │   │   ├── AlertDetail.tsx
+│   │   │   ├── CitationChain.tsx
+│   │   │   ├── DriftBadge.tsx
+│   │   │   └── ActionButtons.tsx
+│   │   ├── ingestion/
+│   │   │   └── IngestionLog.tsx
+│   │   └── layout/
+│   │       ├── Sidebar.tsx
+│   │       └── Header.tsx
+│   └── types/
+│       └── index.ts                 # Shared TypeScript types
+├── __tests__/
+│   ├── unit/
+│   └── integration/
+├── data/
+│   └── policies/                    # Dummy policy corpus (markdown files)
+│       ├── bsa-aml.md
+│       ├── complaint-handling.md
+│       ├── fair-lending.md
+│       ├── reg-e.md
+│       ├── reg-z.md
+│       ├── vendor-management.md
+│       ├── info-security.md
+│       ├── cip.md
+│       ├── overdraft.md
+│       └── marketing.md
+└── specs/                           # (already exists)
+
+
+================================================================================
+  3. DATA MODELS (Prisma Schema)
+================================================================================
+
+model RegulatoryItem {
+  id              String   @id @default(cuid())
+  sourceUrl       String
+  regulator       String   // "SEC" | "FINRA" | "CFPB" | "OCC"
+  publicationDate DateTime
+  documentType    String   // "final_rule" | "proposed_rule" | "enforcement" |
+                           // "bulletin" | "notice" | "guidance" | "letter"
+  title           String
+  fullText        String   // full document text
+  summary         String?  // optional AI-generated summary
+  isRelevant      Boolean? // null = not yet classified
+  ingestionRunId  String
+  ingestionRun    IngestionRun @relation(fields: [ingestionRunId],
+                                        references: [id])
+  alerts          Alert[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PolicyDocument {
+  id          String   @id @default(cuid())
+  title       String
+  domain      String   // "bsa_aml" | "complaint_handling" | "fair_lending" |
+                       // "reg_e" | "reg_z" | "vendor_management" |
+                       // "info_security" | "cip" | "overdraft" | "marketing"
+  fullText    String
+  version     String   @default("1.0")
+  isSynthetic Boolean  @default(true)
+  chunks      PolicyChunk[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PolicyChunk {
+  id               String   @id @default(cuid())
+  policyDocumentId String
+  policyDocument   PolicyDocument @relation(fields: [policyDocumentId],
+                                            references: [id])
+  sectionHeading   String
+  content          String
+  chunkIndex       Int
+  embedding        String?  // JSON-serialized float array
+  alerts           Alert[]
+  createdAt        DateTime @default(now())
+}
+
+model Alert {
+  id                 String   @id @default(cuid())
+  regulatoryItemId   String
+  regulatoryItem     RegulatoryItem @relation(fields: [regulatoryItemId],
+                                              references: [id])
+  policyChunkId      String
+  policyChunk        PolicyChunk @relation(fields: [policyChunkId],
+                                           references: [id])
+  classification     String   // "aligned" | "drifted" | "contradicted" |
+                              // "ambiguous" | "no_material_impact"
+  confidence         Float    // 0.0 - 1.0
+  severity           String   // "high" | "medium" | "low"
+  explanation        String   // plain-language, 2-4 sentences
+  regulatoryQuote    String   // direct quote from regulatory text
+  policyQuote        String   // direct quote from policy text
+  regulatorySourceUrl String  // stable link to regulatory document
+  policyReference    String   // "PolicyTitle > SectionHeading"
+  status             String   @default("open")
+                              // "open" | "accepted" | "dismissed" |
+                              // "escalated" | "snoozed"
+  dismissReason      String?  // reason code if dismissed
+  escalationNote     String?  // note if escalated
+  snoozeUntil        DateTime?
+  auditEntries       AuditEntry[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model AuditEntry {
+  id          String   @id @default(cuid())
+  alertId     String?
+  alert       Alert?   @relation(fields: [alertId], references: [id])
+  actor       String   // "system" | "reviewer"
+  action      String   // "created" | "accepted" | "dismissed" | "escalated" |
+                       // "snoozed" | "reopened"
+  beforeState String?  // JSON of prior status
+  afterState  String?  // JSON of new status
+  note        String?  // reviewer-supplied note or reason code
+  timestamp   DateTime @default(now())
+}
+
+model IngestionRun {
+  id              String   @id @default(cuid())
+  trigger         String   // "scheduled" | "manual"
+  status          String   // "running" | "completed" | "failed"
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  itemsProcessed  Int      @default(0)
+  itemsFlagged    Int      @default(0)
+  itemsSuppressed Int      @default(0)
+  errors          String?  // JSON array of error messages
+  regulatoryItems RegulatoryItem[]
+}
+
+model LlmCallLog {
+  id          String   @id @default(cuid())
+  purpose     String   // "relevance" | "classification" | "explanation"
+  model       String
+  prompt      String
+  response    String
+  tokenInput  Int
+  tokenOutput Int
+  latencyMs   Int
+  createdAt   DateTime @default(now())
+}
+
+
+================================================================================
+  4. API ROUTES
+================================================================================
+
+All routes return JSON. Errors use { error: string, details?: string }.
+
+GET /api/health
+  Response: { status: "ok", timestamp: string, db: "connected"|"error" }
+
+GET /api/dashboard/stats
+  Response: {
+    alertsBySeverity: { high: number, medium: number, low: number },
+    alertsByRegulator: { SEC: number, FINRA: number, CFPB: number, OCC: number },
+    alertsByDomain: Record<string, number>,
+    alertsByStatus: Record<string, number>,
+    totalOpen: number,
+    recentIngestion: IngestionRun[]  // last 5 runs
+  }
+
+GET /api/alerts
+  Query params:
+    regulator?:   string (comma-separated)
+    severity?:    string (comma-separated)
+    status?:      string (comma-separated)
+    domain?:      string (comma-separated)
+    dateFrom?:    ISO date string
+    dateTo?:      ISO date string
+    sortBy?:      "severity" | "date" | "regulator" | "domain" | "status"
+                  (default: "date")
+    sortOrder?:   "asc" | "desc" (default: "desc")
+    page?:        number (default: 1)
+    pageSize?:    number (default: 25, max: 100)
+  Response: {
+    alerts: Alert[],        // with nested regulatoryItem + policyChunk summary
+    total: number,
+    page: number,
+    pageSize: number,
+    totalPages: number
+  }
+
+GET /api/alerts/:id
+  Response: Alert with full nested regulatoryItem, policyChunk (with
+  policyDocument), and auditEntries[]
+
+POST /api/alerts/:id/action
+  Body: {
+    action: "accept" | "dismiss" | "escalate" | "snooze",
+    reason?: string,        // required for "dismiss"
+    note?: string,          // optional for "escalate"
+    snoozeUntil?: string    // ISO date, required for "snooze"
+  }
+  Response: updated Alert with new auditEntry
+  Side effects: creates AuditEntry with before/after state
+
+POST /api/ingestion/trigger
+  Body: { url?: string }   // optional: ingest a specific URL instead of
+                           // running the full scheduled crawl
+  Response: { runId: string, status: "started" }
+  Side effects: starts ingestion pipeline asynchronously
+
+GET /api/ingestion/log
+  Query params:
+    page?:     number (default: 1)
+    pageSize?: number (default: 20)
+  Response: {
+    runs: IngestionRun[],
+    total: number,
+    page: number,
+    totalPages: number
+  }
+
+
+================================================================================
+  5. DRIFT DETECTION PIPELINE
+================================================================================
+
+Entry point: src/lib/drift/detector.ts :: runDriftDetection(regulatoryItemId)
+
+Step 1 — Relevance Classification
+  Input:  regulatory item title + first 2000 chars of fullText
+  LLM call with structured output:
+    { isRelevant: boolean, relevantDomains: string[], reasoning: string }
+  If not relevant -> log, mark isRelevant=false, stop.
+
+Step 2 — Candidate Retrieval
+  Embed the regulatory item text (title + key paragraphs).
+  Compute cosine similarity against all PolicyChunk embeddings.
+  Return top 15 chunks, minimum similarity threshold 0.3.
+
+Step 3 — Drift Classification (per candidate chunk)
+  LLM call with structured output:
+  Input:  { regulatoryText, policyText, policySection, policyDocument }
+  Output: {
+    classification: "aligned"|"drifted"|"contradicted"|"ambiguous"|"no_material_impact",
+    confidence: number,          // 0.0-1.0
+    explanation: string,         // 2-4 sentences
+    regulatoryQuote: string,     // exact text from regulatory item
+    policyQuote: string          // exact text from policy chunk
+  }
+
+Step 4 — Citation Verification
+  For each classification result:
+    - Verify regulatoryQuote appears in the regulatory item fullText
+    - Verify policyQuote appears in the policy chunk content
+    - If either verification fails -> suppress the alert (do not create it)
+    - Log suppressed alerts in the ingestion run metrics
+
+Step 5 — Severity Scoring
+  Derive severity from classification + confidence:
+    contradicted + confidence >= 0.7  -> high
+    contradicted + confidence <  0.7  -> medium
+    drifted     + confidence >= 0.8  -> medium
+    drifted     + confidence <  0.8  -> low
+    ambiguous   (any confidence)     -> low
+    aligned / no_material_impact     -> no alert created
+
+Step 6 — Alert Creation
+  Create Alert record with all fields.
+  Create AuditEntry: actor="system", action="created".
+  Increment ingestionRun.itemsFlagged.
+
+
+================================================================================
+  6. INGESTION PARSERS
+================================================================================
+
+Each parser module exports:
+  fetchLatest(): Promise<RawRegulatoryItem[]>
+
+RawRegulatoryItem = {
+  sourceUrl: string,
+  regulator: "SEC" | "FINRA" | "CFPB" | "OCC",
+  publicationDate: Date,
+  documentType: string,
+  title: string,
+  fullText: string,
+}
+
+Parser behavior:
+  - Fetch RSS/HTML from the regulator's public site
+  - Parse items published since last successful ingestion run
+  - Extract full text (HTML to plain text conversion)
+  - Handle errors gracefully: log and continue, never crash the run
+  - Deduplicate by sourceUrl (skip items already in DB)
+
+For MVP demo: parsers may return a small number of real items from each
+regulator. If live fetching is unreliable, parsers should fall back to
+a local cache of pre-downloaded regulatory items stored in data/regulatory/.
+
+Scheduling (MVP):
+  The MVP does NOT implement automatic scheduled ingestion. The 6-hour cadence
+  described in the PRD is a production requirement, not an MVP requirement.
+
+  For the demo, ingestion is triggered exclusively via:
+    1. The "Trigger Ingestion" button on the dashboard (POST /api/ingestion/trigger)
+    2. Direct API call to POST /api/ingestion/trigger (e.g., from curl or a test)
+
+  src/lib/ingestion/scheduler.ts is a stub that documents the production
+  approach. It should export a no-op function and include a comment block
+  explaining that production deployment would use an external scheduler
+  (Azure Functions timer trigger, OS cron, or similar) calling the trigger
+  endpoint on a 6-hour interval. No in-process setInterval or background
+  polling should be implemented.
+
+  This keeps the MVP simple and avoids the fragility of in-process scheduling
+  in a Next.js server that may restart, redeploy, or run in serverless mode.
+
+
+================================================================================
+  7. DUMMY POLICY CORPUS
+================================================================================
+
+10 markdown files in data/policies/, each 2-5 pages long. Each represents a
+realistic but fictional bank policy document. Mark each clearly as synthetic
+in a header comment.
+
+Required structure per document:
+  # [Policy Title]
+  *Synthetic document for demo purposes only*
+
+  ## 1. Purpose
+  ## 2. Scope
+  ## 3. Definitions
+  ## 4-N. [Domain-specific sections with substantive policy language]
+  ## N+1. Compliance Monitoring
+  ## N+2. Violations and Enforcement
+
+Chunking strategy:
+  Split each document at ## headings. Each chunk = one section.
+  Store sectionHeading + content in PolicyChunk.
+  Generate and store embedding for each chunk on seed.
+
+
+================================================================================
+  8. UI SPECIFICATIONS
+================================================================================
+
+Layout:
+  - Fixed left sidebar (240px) with navigation: Dashboard, Alerts, Ingestion Log
+  - Top header bar with app title "Tether" and subtitle "Regulatory Drift Detector"
+  - Main content area fills remaining width
+
+Color coding for severity:
+  high   -> red     (destructive variant)
+  medium -> amber   (warning variant)
+  low    -> blue    (info variant)
+
+Color coding for classification:
+  contradicted -> red
+  drifted      -> amber
+  ambiguous    -> yellow
+  aligned      -> green
+  no_material_impact -> gray
+
+Status badges:
+  open      -> outline
+  accepted  -> blue solid
+  dismissed -> gray solid
+  escalated -> red solid
+  snoozed   -> amber solid
+
+Dashboard layout (2-column grid on desktop):
+  Row 1: [Severity summary cards (3)]  [Trigger Ingestion button]
+  Row 2: [Alerts by Regulator bar]     [Alerts by Domain bar]
+  Row 3: [Recent Ingestion Activity table -- last 5 runs]
+
+Alert list:
+  Table columns: Severity | Classification | Regulator | Policy Domain |
+                 Date Detected | Status | Actions
+  Filters render above the table in a collapsible filter bar.
+  Pagination at bottom.
+
+Alert detail:
+  Two-panel layout:
+    Left panel:  Regulatory source (title, date, regulator, document type,
+                 quoted text with highlight)
+    Right panel: Policy passage (document title, section heading,
+                 quoted text with highlight)
+  Below panels: Classification badge, confidence bar, severity badge,
+                explanation text
+  Action bar:   Accept | Dismiss | Escalate | Snooze buttons
+  Bottom:       Audit history timeline (newest first)
+
+
+================================================================================
+  9. DISMISS REASON CODES
+================================================================================
+
+When a reviewer dismisses an alert, they must select a reason code:
+
+  false_positive         -- "This is not an actual drift"
+  already_addressed      -- "Policy has already been updated"
+  not_applicable         -- "This regulation does not apply to our institution"
+  duplicate              -- "Duplicate of another alert"
+  accepted_risk          -- "Risk acknowledged and accepted"
+  other                  -- Free text required in note field
+
+
+================================================================================
+  10. AUDIT LOG RULES
+================================================================================
+
+Every state change on an alert creates an AuditEntry:
+  - actor: "system" for automated actions, "reviewer" for user actions
+  - action: one of "created", "accepted", "dismissed", "escalated",
+            "snoozed", "reopened"
+  - beforeState: JSON string of { status, severity } before the action
+  - afterState:  JSON string of { status, severity } after the action
+  - note: reviewer-supplied note or dismiss reason code
+
+Audit entries are append-only. No updates or deletes.
+The alert detail view displays audit entries as a timeline.
+
+
+================================================================================
+  11. LLM CALL LOGGING
+================================================================================
+
+Every call to the Claude API or embedding API must be logged to LlmCallLog:
+  - purpose: what the call was for
+  - model: exact model ID used
+  - prompt: full prompt sent
+  - response: full response received
+  - tokenInput / tokenOutput: from API response usage
+  - latencyMs: measured wall-clock time
+
+This is a non-functional requirement for observability. Implementation should
+use a wrapper function in src/lib/ai/ that all LLM calls go through.
+
+
+================================================================================
+  12. ERROR HANDLING
+================================================================================
+
+Ingestion errors:
+  - 404 / timeout from regulator site -> log error, continue with other sources
+  - Parse failure on a single item -> log, skip item, continue run
+  - A failed run must not block subsequent scheduled or manual runs
+
+LLM errors:
+  - API timeout -> retry once with exponential backoff, then skip item
+  - Malformed structured output -> log, skip item
+  - Citation verification failure -> suppress alert, increment itemsSuppressed
+
+UI errors:
+  - API errors display a toast notification with the error message
+  - Loading states shown for all async operations
+  - Empty states shown when no data matches filters
+
+
+================================================================================
+  13. PERFORMANCE TARGETS
+================================================================================
+
+  - Single regulatory item: ingestion to alerts visible in UI <= 5 minutes
+  - Dashboard load: < 2 seconds with up to 1,000 alerts
+  - Alert detail load: < 1 second
+  - Alert list with filters: < 1 second for up to 1,000 alerts
+  - Embedding generation: batch policy corpus in under 2 minutes
+
+These are demo targets, not production SLAs.

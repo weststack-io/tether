@@ -1,0 +1,27 @@
+## Session 0 — Project Initialization
+Date: 2026-05-04
+
+### What Was Done
+- Scaffolded Next.js project with TypeScript, Tailwind, shadcn/ui
+- Created Prisma schema with all 7 data models
+- Set up SQLite database
+- Built application shell (sidebar, header, placeholder pages)
+- Created stub API routes for all endpoints
+- Set up directory structure for all modules
+- Configured Jest for testing
+- Created .env.example with all required variables
+- Initial git commit
+
+### Project State
+- All 78 features in feature_list.json are marked as `passes: false`
+- Application shell loads at localhost:3000
+- Health endpoint responds at /api/health
+- No business logic implemented yet
+
+### Next Priorities
+- INFRA-001: Verify scaffolding (should pass immediately after this session)
+- INFRA-002: Prisma schema verification
+- INFRA-003: Environment configuration
+- INFRA-004: Shared types
+- Then: LAYOUT-001 and LAYOUT-002 for navigation
+- Then: CORPUS-001 through CORPUS-010 for policy documents

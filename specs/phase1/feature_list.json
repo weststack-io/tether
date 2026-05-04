@@ -1,0 +1,1050 @@
+{
+  "version": 1,
+  "generated_by": "claude-opus-4-6",
+  "generated_at": "2026-05-04T00:00:00Z",
+  "total_features": 78,
+  "features": [
+    {
+      "id": "INFRA-001",
+      "priority": 1,
+      "category": "infrastructure",
+      "description": "Next.js project scaffolded with TypeScript, Tailwind CSS, and shadcn/ui initialized",
+      "steps": [
+        "Verify package.json exists with next, react, typescript, tailwindcss dependencies",
+        "Run 'npx tsc --noEmit' and confirm zero errors",
+        "Navigate to http://localhost:3000 and verify the page loads",
+        "Verify tailwind.config.ts exists and is configured",
+        "Verify tsconfig.json has strict mode enabled"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INFRA-002",
+      "priority": 2,
+      "category": "infrastructure",
+      "description": "Prisma schema defined with all data models (RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, LlmCallLog) and SQLite database connected",
+      "steps": [
+        "Verify prisma/schema.prisma exists with all 7 models",
+        "Run 'npx prisma generate' successfully",
+        "Run 'npx prisma db push' successfully",
+        "Verify src/lib/db.ts exports a singleton Prisma client",
+        "Import the Prisma client in a test file and confirm it connects"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INFRA-003",
+      "priority": 3,
+      "category": "infrastructure",
+      "description": "Environment configuration with .env.example containing all required variables and .env.local loading correctly",
+      "steps": [
+        "Verify .env.example exists with DATABASE_URL, ANTHROPIC_API_KEY, EMBEDDING_PROVIDER, OPENAI_API_KEY, VOYAGE_API_KEY, EMBEDDING_MODEL, CLAUDE_MODEL, INGESTION_INTERVAL_HOURS, LOG_LEVEL",
+        "Verify .env.local is created from .env.example by init.sh",
+        "Verify Next.js loads environment variables at runtime"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INFRA-004",
+      "priority": 4,
+      "category": "infrastructure",
+      "description": "Shared TypeScript types defined in src/types/index.ts covering all domain types used across the application",
+      "steps": [
+        "Verify src/types/index.ts exists",
+        "Verify it exports types for RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, DriftClassification, Severity, AlertStatus, Regulator",
+        "Run 'npx tsc --noEmit' and confirm zero errors"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LAYOUT-001",
+      "priority": 5,
+      "category": "ui",
+      "description": "Application shell with fixed left sidebar navigation (Dashboard, Alerts, Ingestion Log) and top header bar showing 'Tether - Regulatory Drift Detector'",
+      "steps": [
+        "Navigate to http://localhost:3000",
+        "Verify left sidebar is visible with 240px width",
+        "Verify sidebar contains navigation links: Dashboard, Alerts, Ingestion Log",
+        "Verify header bar displays 'Tether' as app title and 'Regulatory Drift Detector' as subtitle",
+        "Click each sidebar link and verify it navigates to the correct page"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LAYOUT-002",
+      "priority": 6,
+      "category": "ui",
+      "description": "Active navigation state highlights the current page in the sidebar",
+      "steps": [
+        "Navigate to http://localhost:3000 (Dashboard)",
+        "Verify Dashboard link is visually highlighted as active",
+        "Navigate to /alerts",
+        "Verify Alerts link is now highlighted and Dashboard is not",
+        "Navigate to /ingestion",
+        "Verify Ingestion Log link is now highlighted"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-001",
+      "priority": 7,
+      "category": "api",
+      "description": "Health check endpoint returns status, timestamp, and database connection status",
+      "steps": [
+        "Send GET request to /api/health",
+        "Verify response contains { status: 'ok', timestamp: <ISO string>, db: 'connected' }",
+        "Verify response status code is 200"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-001",
+      "priority": 8,
+      "category": "data",
+      "description": "BSA/AML dummy policy document created with realistic sections covering anti-money laundering program requirements",
+      "steps": [
+        "Verify data/policies/bsa-aml.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic in the header",
+        "Verify it is 2-5 pages of substantive policy language"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-002",
+      "priority": 9,
+      "category": "data",
+      "description": "Consumer complaint handling dummy policy document created",
+      "steps": [
+        "Verify data/policies/complaint-handling.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-003",
+      "priority": 10,
+      "category": "data",
+      "description": "Fair lending dummy policy document created",
+      "steps": [
+        "Verify data/policies/fair-lending.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-004",
+      "priority": 11,
+      "category": "data",
+      "description": "Regulation E (electronic fund transfers) dummy policy document created",
+      "steps": [
+        "Verify data/policies/reg-e.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-005",
+      "priority": 12,
+      "category": "data",
+      "description": "Regulation Z (truth in lending) dummy policy document created",
+      "steps": [
+        "Verify data/policies/reg-z.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-006",
+      "priority": 13,
+      "category": "data",
+      "description": "Vendor management dummy policy document created",
+      "steps": [
+        "Verify data/policies/vendor-management.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-007",
+      "priority": 14,
+      "category": "data",
+      "description": "Information security and incident response dummy policy document created",
+      "steps": [
+        "Verify data/policies/info-security.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-008",
+      "priority": 15,
+      "category": "data",
+      "description": "Customer identification program (CIP) dummy policy document created",
+      "steps": [
+        "Verify data/policies/cip.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-009",
+      "priority": 16,
+      "category": "data",
+      "description": "Overdraft practices dummy policy document created",
+      "steps": [
+        "Verify data/policies/overdraft.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CORPUS-010",
+      "priority": 17,
+      "category": "data",
+      "description": "Marketing and advertising review dummy policy document created",
+      "steps": [
+        "Verify data/policies/marketing.md exists",
+        "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
+        "Verify it is marked as synthetic and is 2-5 pages"
+      ],
+      "passes": false
+    },
+    {
+      "id": "SEED-001",
+      "priority": 18,
+      "category": "data",
+      "description": "Prisma seed script loads all 10 policy documents into PolicyDocument table and chunks them into PolicyChunk records split at ## headings",
+      "steps": [
+        "Run 'npx prisma db seed'",
+        "Query PolicyDocument table and verify 10 records exist",
+        "Query PolicyChunk table and verify each document has multiple chunks",
+        "Verify each chunk has sectionHeading and content populated",
+        "Verify chunkIndex is sequential within each document"
+      ],
+      "passes": false
+    },
+    {
+      "id": "EMBED-001",
+      "priority": 19,
+      "category": "ai",
+      "description": "Embedding generation utility in src/lib/ai/embeddings.ts that generates vector embeddings for text input using the configured provider",
+      "steps": [
+        "Verify src/lib/ai/embeddings.ts exists and exports a generateEmbedding function",
+        "Call generateEmbedding with a sample text string",
+        "Verify it returns a numeric array (float vector)",
+        "Verify the embedding provider is read from environment variables"
+      ],
+      "passes": false
+    },
+    {
+      "id": "EMBED-002",
+      "priority": 20,
+      "category": "ai",
+      "description": "Policy chunk embeddings generated and stored during seed so that all PolicyChunk records have a non-null embedding field",
+      "steps": [
+        "Run the seed script",
+        "Query PolicyChunk table",
+        "Verify every chunk has a non-null embedding field",
+        "Verify embeddings are valid JSON arrays of numbers"
+      ],
+      "passes": false
+    },
+    {
+      "id": "VECTORS-001",
+      "priority": 21,
+      "category": "ai",
+      "description": "Vector similarity utility in src/lib/vectors.ts computes cosine similarity between two embedding vectors",
+      "steps": [
+        "Verify src/lib/vectors.ts exists and exports cosineSimilarity function",
+        "Call cosineSimilarity with two identical vectors and verify result is ~1.0",
+        "Call cosineSimilarity with two orthogonal vectors and verify result is ~0.0",
+        "Call cosineSimilarity with opposite vectors and verify result is ~-1.0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "RETRIEVE-001",
+      "priority": 22,
+      "category": "pipeline",
+      "description": "Semantic retrieval function in src/lib/drift/retriever.ts returns the top 15 most similar policy chunks for a given text input, with minimum similarity threshold of 0.3",
+      "steps": [
+        "Verify src/lib/drift/retriever.ts exists and exports retrieveCandidates function",
+        "Call retrieveCandidates with a sample regulatory text",
+        "Verify it returns at most 15 PolicyChunk records",
+        "Verify all returned chunks have similarity >= 0.3",
+        "Verify results are sorted by similarity descending"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LLM-001",
+      "priority": 23,
+      "category": "ai",
+      "description": "LLM wrapper function logs every Claude API call to the LlmCallLog table with prompt, response, model, tokens, and latency",
+      "steps": [
+        "Make a test LLM call through the wrapper",
+        "Query LlmCallLog table and verify a new record was created",
+        "Verify the record contains purpose, model, prompt, response, tokenInput, tokenOutput, latencyMs",
+        "Verify latencyMs is a positive number"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LLM-002",
+      "priority": 24,
+      "category": "ai",
+      "description": "LLM prompt templates defined in src/lib/ai/prompts.ts for relevance classification, drift classification, and explanation generation",
+      "steps": [
+        "Verify src/lib/ai/prompts.ts exists",
+        "Verify it exports prompt templates for: relevanceClassification, driftClassification",
+        "Verify each template accepts the required input variables",
+        "Verify templates instruct the model to produce structured JSON output"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CLASSIFY-001",
+      "priority": 25,
+      "category": "pipeline",
+      "description": "Relevance classifier determines whether a regulatory item is relevant to any policy domain and returns relevant domains",
+      "steps": [
+        "Call the relevance classifier with a regulatory item about AML rules",
+        "Verify it returns { isRelevant: true, relevantDomains: ['bsa_aml'], reasoning: <string> }",
+        "Call with an item clearly unrelated to banking (e.g., agriculture regulation)",
+        "Verify it returns { isRelevant: false, relevantDomains: [], reasoning: <string> }",
+        "Verify structured output conforms to the expected JSON schema"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CLASSIFY-002",
+      "priority": 26,
+      "category": "pipeline",
+      "description": "Drift classifier evaluates a regulatory item against a policy chunk and returns classification, confidence, explanation, and exact quotes",
+      "steps": [
+        "Call the drift classifier with a regulatory text and a contradicting policy chunk",
+        "Verify it returns one of: aligned, drifted, contradicted, ambiguous, no_material_impact",
+        "Verify confidence is a number between 0.0 and 1.0",
+        "Verify explanation is 2-4 sentences",
+        "Verify regulatoryQuote and policyQuote are non-empty strings"
+      ],
+      "passes": false
+    },
+    {
+      "id": "CITE-001",
+      "priority": 27,
+      "category": "pipeline",
+      "description": "Citation verification checks that regulatoryQuote appears in the regulatory item text and policyQuote appears in the policy chunk text",
+      "steps": [
+        "Verify src/lib/drift/citation.ts exports a verifyCitations function",
+        "Call verifyCitations with quotes that exist in the source texts and verify it returns true",
+        "Call verifyCitations with a fabricated quote not in the source and verify it returns false",
+        "Verify that when verification fails, the alert is suppressed (not created)"
+      ],
+      "passes": false
+    },
+    {
+      "id": "SCORE-001",
+      "priority": 28,
+      "category": "pipeline",
+      "description": "Severity scorer derives severity from classification and confidence according to the scoring rules in the app spec",
+      "steps": [
+        "Verify src/lib/drift/scorer.ts exports a deriveSeverity function",
+        "Call with classification='contradicted', confidence=0.8 and verify severity='high'",
+        "Call with classification='contradicted', confidence=0.5 and verify severity='medium'",
+        "Call with classification='drifted', confidence=0.9 and verify severity='medium'",
+        "Call with classification='drifted', confidence=0.6 and verify severity='low'",
+        "Call with classification='ambiguous', confidence=0.9 and verify severity='low'"
+      ],
+      "passes": false
+    },
+    {
+      "id": "PIPE-001",
+      "priority": 29,
+      "category": "pipeline",
+      "description": "Full drift detection pipeline orchestrator runs all steps (relevance, retrieval, classification, citation verification, scoring, alert creation) for a given regulatory item",
+      "steps": [
+        "Verify src/lib/drift/detector.ts exports runDriftDetection function",
+        "Seed the database with policy corpus",
+        "Create a test regulatory item that should trigger drift",
+        "Call runDriftDetection with the item ID",
+        "Verify alerts were created in the Alert table with all required fields populated",
+        "Verify AuditEntry records were created for each alert with actor='system' and action='created'"
+      ],
+      "passes": false
+    },
+    {
+      "id": "PIPE-002",
+      "priority": 30,
+      "category": "pipeline",
+      "description": "Drift detection pipeline suppresses alerts when citation verification fails and increments the itemsSuppressed counter on the ingestion run",
+      "steps": [
+        "Create a test scenario where the LLM returns a fabricated quote",
+        "Run the pipeline",
+        "Verify no alert is created for the fabricated citation",
+        "Verify the ingestion run's itemsSuppressed count was incremented"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGEST-001",
+      "priority": 31,
+      "category": "ingestion",
+      "description": "SEC parser fetches regulatory items from SEC.gov public sources and returns structured RawRegulatoryItem objects",
+      "steps": [
+        "Verify src/lib/ingestion/parsers/sec.ts exists and exports fetchLatest",
+        "Call fetchLatest and verify it returns an array of items",
+        "Verify each item has sourceUrl, regulator='SEC', publicationDate, documentType, title, fullText",
+        "Verify the parser handles network errors gracefully without crashing"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGEST-002",
+      "priority": 32,
+      "category": "ingestion",
+      "description": "FINRA parser fetches regulatory notices from FINRA.org and returns structured RawRegulatoryItem objects",
+      "steps": [
+        "Verify src/lib/ingestion/parsers/finra.ts exists and exports fetchLatest",
+        "Call fetchLatest and verify it returns an array of items",
+        "Verify each item has regulator='FINRA' and required fields",
+        "Verify the parser handles network errors gracefully"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGEST-003",
+      "priority": 33,
+      "category": "ingestion",
+      "description": "CFPB parser fetches publications from CFPB.gov and returns structured RawRegulatoryItem objects",
+      "steps": [
+        "Verify src/lib/ingestion/parsers/cfpb.ts exists and exports fetchLatest",
+        "Call fetchLatest and verify it returns an array of items",
+        "Verify each item has regulator='CFPB' and required fields",
+        "Verify the parser handles network errors gracefully"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGEST-004",
+      "priority": 34,
+      "category": "ingestion",
+      "description": "OCC parser fetches bulletins and issuances from OCC.gov and returns structured RawRegulatoryItem objects",
+      "steps": [
+        "Verify src/lib/ingestion/parsers/occ.ts exists and exports fetchLatest",
+        "Call fetchLatest and verify it returns an array of items",
+        "Verify each item has regulator='OCC' and required fields",
+        "Verify the parser handles network errors gracefully"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGEST-005",
+      "priority": 35,
+      "category": "ingestion",
+      "description": "HTTP fetcher utility handles timeouts, 404s, and connection errors gracefully by logging the error and returning a failure result instead of throwing",
+      "steps": [
+        "Verify src/lib/ingestion/fetcher.ts exists",
+        "Call the fetcher with a known-bad URL and verify it returns an error result (not throws)",
+        "Call the fetcher with a valid URL and verify it returns the content",
+        "Verify errors are logged with context about which URL failed"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGEST-006",
+      "priority": 36,
+      "category": "ingestion",
+      "description": "Ingestion pipeline orchestrator creates an IngestionRun record, calls all four parsers, deduplicates by sourceUrl, persists new items, runs drift detection, and updates run metrics",
+      "steps": [
+        "Verify src/lib/ingestion/pipeline.ts exports runIngestion function",
+        "Call runIngestion with trigger='manual'",
+        "Verify an IngestionRun record is created with status='running' then updated to 'completed'",
+        "Verify itemsProcessed count matches the number of new items",
+        "Verify duplicate sourceUrls are skipped",
+        "Verify the run completes even if one parser fails"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGEST-007",
+      "priority": 37,
+      "category": "ingestion",
+      "description": "A failed ingestion run does not block subsequent runs from executing",
+      "steps": [
+        "Trigger an ingestion run that fails (e.g., all parsers return errors)",
+        "Verify the run is marked as 'failed' with error details",
+        "Trigger another ingestion run immediately after",
+        "Verify the second run starts and completes independently"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-002",
+      "priority": 38,
+      "category": "api",
+      "description": "Dashboard stats endpoint returns alert counts by severity, regulator, domain, and status, plus recent ingestion runs",
+      "steps": [
+        "Seed the database with sample alerts across different severities, regulators, and domains",
+        "Send GET request to /api/dashboard/stats",
+        "Verify response contains alertsBySeverity with high, medium, low counts",
+        "Verify response contains alertsByRegulator with SEC, FINRA, CFPB, OCC counts",
+        "Verify response contains alertsByDomain with counts per policy domain",
+        "Verify response contains totalOpen count matching open alerts",
+        "Verify response contains recentIngestion array with up to 5 recent runs"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-003",
+      "priority": 39,
+      "category": "api",
+      "description": "Alerts list endpoint returns paginated alerts with nested regulatory item and policy chunk summaries",
+      "steps": [
+        "Seed the database with 30+ alerts",
+        "Send GET request to /api/alerts",
+        "Verify response contains alerts array, total, page, pageSize, totalPages",
+        "Verify default pageSize is 25",
+        "Verify each alert includes regulatoryItem summary and policyChunk summary",
+        "Send GET to /api/alerts?page=2 and verify second page of results"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-004",
+      "priority": 40,
+      "category": "api",
+      "description": "Alerts list endpoint supports filtering by regulator, severity, status, domain, and date range",
+      "steps": [
+        "Seed alerts with varied regulators, severities, and statuses",
+        "Send GET to /api/alerts?regulator=SEC and verify only SEC alerts returned",
+        "Send GET to /api/alerts?severity=high and verify only high-severity alerts",
+        "Send GET to /api/alerts?status=open and verify only open alerts",
+        "Send GET to /api/alerts?domain=bsa_aml and verify only BSA/AML domain alerts",
+        "Send GET to /api/alerts?dateFrom=2026-01-01&dateTo=2026-06-01 and verify date filtering"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-005",
+      "priority": 41,
+      "category": "api",
+      "description": "Alerts list endpoint supports sorting by severity, date, regulator, domain, and status in ascending and descending order",
+      "steps": [
+        "Seed alerts with varied data",
+        "Send GET to /api/alerts?sortBy=severity&sortOrder=desc and verify high appears first",
+        "Send GET to /api/alerts?sortBy=date&sortOrder=asc and verify oldest first",
+        "Verify default sort is by date descending"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-006",
+      "priority": 42,
+      "category": "api",
+      "description": "Alert detail endpoint returns a single alert with full regulatory item, policy chunk (with policy document), and audit history",
+      "steps": [
+        "Create an alert with associated regulatory item, policy chunk, and audit entries",
+        "Send GET to /api/alerts/:id",
+        "Verify response includes full regulatoryItem with sourceUrl, title, fullText",
+        "Verify response includes policyChunk with content and parent policyDocument",
+        "Verify response includes auditEntries array"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-007",
+      "priority": 43,
+      "category": "api",
+      "description": "Alert action endpoint accepts an alert (sets status to 'accepted') and creates an audit entry with before/after state",
+      "steps": [
+        "Create an alert with status 'open'",
+        "Send POST to /api/alerts/:id/action with { action: 'accept' }",
+        "Verify alert status is now 'accepted'",
+        "Verify an AuditEntry was created with actor='reviewer', action='accepted'",
+        "Verify beforeState contains 'open' and afterState contains 'accepted'"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-008",
+      "priority": 44,
+      "category": "api",
+      "description": "Alert action endpoint dismisses an alert with a required reason code and creates an audit entry",
+      "steps": [
+        "Create an alert with status 'open'",
+        "Send POST to /api/alerts/:id/action with { action: 'dismiss', reason: 'false_positive' }",
+        "Verify alert status is now 'dismissed' and dismissReason is 'false_positive'",
+        "Verify an AuditEntry was created with the reason in the note field",
+        "Send POST without reason and verify it returns a validation error"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-009",
+      "priority": 45,
+      "category": "api",
+      "description": "Alert action endpoint escalates an alert with an optional note and creates an audit entry",
+      "steps": [
+        "Create an alert with status 'open'",
+        "Send POST to /api/alerts/:id/action with { action: 'escalate', note: 'Needs legal review' }",
+        "Verify alert status is now 'escalated' and escalationNote is populated",
+        "Verify an AuditEntry was created with action='escalated' and the note"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-010",
+      "priority": 46,
+      "category": "api",
+      "description": "Alert action endpoint snoozes an alert with a required snoozeUntil date and creates an audit entry",
+      "steps": [
+        "Create an alert with status 'open'",
+        "Send POST to /api/alerts/:id/action with { action: 'snooze', snoozeUntil: '2026-06-01' }",
+        "Verify alert status is now 'snoozed' and snoozeUntil is set",
+        "Verify an AuditEntry was created with action='snoozed'",
+        "Send POST without snoozeUntil and verify it returns a validation error"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-011",
+      "priority": 47,
+      "category": "api",
+      "description": "Ingestion trigger endpoint starts an ingestion run asynchronously and returns the run ID",
+      "steps": [
+        "Send POST to /api/ingestion/trigger",
+        "Verify response contains { runId: <string>, status: 'started' }",
+        "Verify an IngestionRun record was created with trigger='manual' and status='running'",
+        "Wait briefly and verify the run eventually completes or fails (not stuck)"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-012",
+      "priority": 48,
+      "category": "api",
+      "description": "Ingestion trigger endpoint accepts an optional URL to ingest a specific regulatory publication",
+      "steps": [
+        "Send POST to /api/ingestion/trigger with { url: '<a real SEC publication URL>' }",
+        "Verify the run processes only the specified URL",
+        "Verify the resulting regulatory item has the correct sourceUrl"
+      ],
+      "passes": false
+    },
+    {
+      "id": "API-013",
+      "priority": 49,
+      "category": "api",
+      "description": "Ingestion log endpoint returns paginated list of all ingestion runs with metrics",
+      "steps": [
+        "Create several ingestion runs with varied statuses and metrics",
+        "Send GET to /api/ingestion/log",
+        "Verify response contains runs array with id, trigger, status, startedAt, completedAt, itemsProcessed, itemsFlagged, itemsSuppressed",
+        "Verify pagination works with page and pageSize params",
+        "Verify runs are ordered by startedAt descending"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DASH-001",
+      "priority": 50,
+      "category": "ui",
+      "description": "Dashboard page displays three severity summary cards showing counts of high, medium, and low severity open alerts",
+      "steps": [
+        "Navigate to http://localhost:3000",
+        "Verify three cards are visible labeled High, Medium, Low",
+        "Verify each card shows the correct count matching the database",
+        "Verify high card uses red styling, medium uses amber, low uses blue"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DASH-002",
+      "priority": 51,
+      "category": "ui",
+      "description": "Dashboard page displays a 'Trigger Ingestion' button that starts an ingestion run when clicked",
+      "steps": [
+        "Navigate to http://localhost:3000",
+        "Verify a 'Trigger Ingestion' button is visible",
+        "Click the button",
+        "Verify a loading/in-progress indicator appears",
+        "Verify a success notification or status update appears when the run completes"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DASH-003",
+      "priority": 52,
+      "category": "ui",
+      "description": "Dashboard page displays alerts-by-regulator breakdown showing counts for SEC, FINRA, CFPB, and OCC",
+      "steps": [
+        "Navigate to http://localhost:3000",
+        "Verify a chart or card group shows alert counts broken down by regulator",
+        "Verify SEC, FINRA, CFPB, and OCC are all represented",
+        "Verify counts match the database"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DASH-004",
+      "priority": 53,
+      "category": "ui",
+      "description": "Dashboard page displays alerts-by-policy-domain breakdown",
+      "steps": [
+        "Navigate to http://localhost:3000",
+        "Verify a chart or card group shows alert counts broken down by policy domain",
+        "Verify domain names are human-readable",
+        "Verify counts match the database"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DASH-005",
+      "priority": 54,
+      "category": "ui",
+      "description": "Dashboard page displays recent ingestion activity showing the last 5 runs with timestamps and item counts",
+      "steps": [
+        "Navigate to http://localhost:3000",
+        "Verify a recent activity section shows up to 5 ingestion runs",
+        "Verify each run shows timestamp, trigger type, status, and items processed/flagged counts",
+        "Verify runs are ordered most recent first"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-001",
+      "priority": 55,
+      "category": "ui",
+      "description": "Alert list page displays a sortable table with columns: Severity, Classification, Regulator, Policy Domain, Date Detected, Status",
+      "steps": [
+        "Navigate to http://localhost:3000/alerts",
+        "Verify a table is displayed with all required columns",
+        "Verify alerts from the database are shown in the table",
+        "Click a column header and verify the table re-sorts"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-002",
+      "priority": 56,
+      "category": "ui",
+      "description": "Alert list page has a filter bar that filters alerts by regulator",
+      "steps": [
+        "Navigate to http://localhost:3000/alerts",
+        "Locate the filter controls",
+        "Select regulator filter for 'SEC'",
+        "Verify only SEC alerts are shown in the table",
+        "Clear the filter and verify all alerts return"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-003",
+      "priority": 57,
+      "category": "ui",
+      "description": "Alert list page has a filter bar that filters alerts by severity",
+      "steps": [
+        "Navigate to http://localhost:3000/alerts",
+        "Select severity filter for 'high'",
+        "Verify only high-severity alerts are shown",
+        "Clear the filter and verify all alerts return"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-004",
+      "priority": 58,
+      "category": "ui",
+      "description": "Alert list page has a filter bar that filters alerts by status",
+      "steps": [
+        "Navigate to http://localhost:3000/alerts",
+        "Select status filter for 'open'",
+        "Verify only open alerts are shown",
+        "Clear the filter and verify all alerts return"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-005",
+      "priority": 59,
+      "category": "ui",
+      "description": "Alert list page has a filter bar that filters alerts by policy domain",
+      "steps": [
+        "Navigate to http://localhost:3000/alerts",
+        "Select domain filter for a specific domain",
+        "Verify only alerts from that domain are shown",
+        "Clear the filter and verify all alerts return"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-006",
+      "priority": 60,
+      "category": "ui",
+      "description": "Alert list page has a date range filter that filters alerts by detection date",
+      "steps": [
+        "Navigate to http://localhost:3000/alerts",
+        "Set a date range in the filter",
+        "Verify only alerts within that date range are shown",
+        "Clear the filter and verify all alerts return"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-007",
+      "priority": 61,
+      "category": "ui",
+      "description": "Alert list page has pagination controls that navigate between pages of results",
+      "steps": [
+        "Seed database with 30+ alerts",
+        "Navigate to http://localhost:3000/alerts",
+        "Verify pagination controls are visible at the bottom",
+        "Verify first page shows 25 alerts (default page size)",
+        "Click next page and verify different alerts are shown",
+        "Verify page numbers and total count are displayed"
+      ],
+      "passes": false
+    },
+    {
+      "id": "LIST-008",
+      "priority": 62,
+      "category": "ui",
+      "description": "Clicking an alert row in the list navigates to the alert detail page",
+      "steps": [
+        "Navigate to http://localhost:3000/alerts",
+        "Click on an alert row",
+        "Verify the browser navigates to /alerts/[id]",
+        "Verify the alert detail page loads with the correct alert data"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-001",
+      "priority": 63,
+      "category": "ui",
+      "description": "Alert detail page displays regulatory source text and policy passage text in a side-by-side two-panel layout",
+      "steps": [
+        "Navigate to an alert detail page",
+        "Verify left panel shows regulatory source: title, date, regulator, document type, and quoted text",
+        "Verify right panel shows policy passage: document title, section heading, and quoted text",
+        "Verify both quoted texts are visually highlighted"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-002",
+      "priority": 64,
+      "category": "ui",
+      "description": "Alert detail page shows drift classification badge, confidence score bar, severity badge, and plain-language explanation",
+      "steps": [
+        "Navigate to an alert detail page",
+        "Verify classification badge is visible with correct color coding",
+        "Verify confidence score is displayed as a visual bar or percentage",
+        "Verify severity badge is visible with correct color coding",
+        "Verify plain-language explanation text is displayed below the panels"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-003",
+      "priority": 65,
+      "category": "ui",
+      "description": "Alert detail page displays the full citation chain with regulatory source URL and policy document/section reference",
+      "steps": [
+        "Navigate to an alert detail page",
+        "Verify the regulatory source URL is displayed as a clickable link",
+        "Verify the policy reference shows the document title and section heading",
+        "Verify both citations are clearly labeled"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-004",
+      "priority": 66,
+      "category": "ui",
+      "description": "Alert detail page has Accept button that updates the alert status to 'accepted' and refreshes the view",
+      "steps": [
+        "Navigate to an alert detail page with status 'open'",
+        "Click the Accept button",
+        "Verify the alert status updates to 'accepted'",
+        "Verify the status badge changes to reflect the new status",
+        "Verify a new audit entry appears in the audit history"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-005",
+      "priority": 67,
+      "category": "ui",
+      "description": "Alert detail page has Dismiss button that opens a reason code selector and requires a reason before dismissing",
+      "steps": [
+        "Navigate to an alert detail page with status 'open'",
+        "Click the Dismiss button",
+        "Verify a reason code selector appears with options: false_positive, already_addressed, not_applicable, duplicate, accepted_risk, other",
+        "Select 'false_positive' and confirm",
+        "Verify alert status updates to 'dismissed'",
+        "Verify the dismiss reason is recorded"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-006",
+      "priority": 68,
+      "category": "ui",
+      "description": "Alert detail page has Escalate button that accepts an optional note and updates status to 'escalated'",
+      "steps": [
+        "Navigate to an alert detail page with status 'open'",
+        "Click the Escalate button",
+        "Verify a text input for a note appears",
+        "Enter 'Needs legal review' and confirm",
+        "Verify alert status updates to 'escalated'",
+        "Verify the escalation note is recorded"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-007",
+      "priority": 69,
+      "category": "ui",
+      "description": "Alert detail page has Snooze button that requires a snooze-until date and updates status to 'snoozed'",
+      "steps": [
+        "Navigate to an alert detail page with status 'open'",
+        "Click the Snooze button",
+        "Verify a date picker appears",
+        "Select a future date and confirm",
+        "Verify alert status updates to 'snoozed'",
+        "Verify the snoozeUntil date is recorded"
+      ],
+      "passes": false
+    },
+    {
+      "id": "DETAIL-008",
+      "priority": 70,
+      "category": "ui",
+      "description": "Alert detail page shows audit history timeline displaying all actions taken on the alert in reverse chronological order",
+      "steps": [
+        "Navigate to an alert that has had multiple actions taken on it",
+        "Verify the audit history section is visible at the bottom of the page",
+        "Verify entries show timestamp, actor, action, and any notes",
+        "Verify entries are ordered newest first",
+        "Verify the initial 'created' entry from the system is present"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGLOG-001",
+      "priority": 71,
+      "category": "ui",
+      "description": "Ingestion log page displays a timestamped list of all ingestion runs with items processed, flagged, and suppressed counts",
+      "steps": [
+        "Navigate to http://localhost:3000/ingestion",
+        "Verify a table or list of ingestion runs is displayed",
+        "Verify each run shows: timestamp, trigger type (scheduled/manual), status, items processed, items flagged, items suppressed",
+        "Verify runs are ordered most recent first"
+      ],
+      "passes": false
+    },
+    {
+      "id": "INGLOG-002",
+      "priority": 72,
+      "category": "ui",
+      "description": "Ingestion log page shows error details for failed runs",
+      "steps": [
+        "Trigger an ingestion run that produces errors",
+        "Navigate to http://localhost:3000/ingestion",
+        "Locate the failed run",
+        "Verify the run shows a 'failed' status badge",
+        "Verify error details are visible or expandable"
+      ],
+      "passes": false
+    },
+    {
+      "id": "SEED-002",
+      "priority": 73,
+      "category": "data",
+      "description": "Database seeded with pre-built demo alerts covering all five classification types (aligned, drifted, contradicted, ambiguous, no_material_impact) from real regulatory publications matched against the dummy corpus",
+      "steps": [
+        "Run the seed script",
+        "Query alerts and verify at least one alert exists for each classification type: drifted, contradicted, ambiguous",
+        "Verify alerts span multiple regulators (SEC, FINRA, CFPB, OCC)",
+        "Verify alerts span multiple policy domains",
+        "Verify each alert has valid citations (regulatoryQuote, policyQuote, sourceUrl, policyReference)"
+      ],
+      "passes": false
+    },
+    {
+      "id": "SEED-003",
+      "priority": 74,
+      "category": "data",
+      "description": "Database seeded with sample ingestion runs so the dashboard and ingestion log have data on first load",
+      "steps": [
+        "Run the seed script",
+        "Query IngestionRun table and verify at least 3 runs exist",
+        "Verify runs have varied statuses (completed, failed)",
+        "Verify runs have realistic item counts"
+      ],
+      "passes": false
+    },
+    {
+      "id": "SEED-004",
+      "priority": 75,
+      "category": "data",
+      "description": "Database seeded with sample audit entries showing reviewer actions on alerts so the audit trail is populated for demo",
+      "steps": [
+        "Run the seed script",
+        "Query AuditEntry table and verify entries exist for multiple alerts",
+        "Verify entries include both system (created) and reviewer (accepted, dismissed, escalated) actions",
+        "Verify entries have before/after state and notes where applicable"
+      ],
+      "passes": false
+    },
+    {
+      "id": "UI-001",
+      "priority": 76,
+      "category": "ui",
+      "description": "Loading states are displayed for all async operations (dashboard stats, alert list, alert detail, ingestion log)",
+      "steps": [
+        "Navigate to each page and observe the loading state before data appears",
+        "Verify a spinner or skeleton UI is shown during data fetch",
+        "Verify the loading state transitions to the data view once loaded"
+      ],
+      "passes": false
+    },
+    {
+      "id": "UI-002",
+      "priority": 77,
+      "category": "ui",
+      "description": "Empty states are displayed when no data matches the current filters or when tables have no data",
+      "steps": [
+        "Navigate to the alerts page and apply filters that match zero alerts",
+        "Verify an empty state message is shown (e.g., 'No alerts match your filters')",
+        "Navigate to ingestion log with no runs in the database",
+        "Verify an empty state message is shown"
+      ],
+      "passes": false
+    },
+    {
+      "id": "UI-003",
+      "priority": 78,
+      "category": "ui",
+      "description": "API errors display a toast notification with the error message instead of crashing the UI",
+      "steps": [
+        "Simulate an API error (e.g., temporarily break an endpoint)",
+        "Navigate to a page that calls that endpoint",
+        "Verify a toast notification appears with an error message",
+        "Verify the page does not crash or show a blank screen"
+      ],
+      "passes": false
+    }
+  ]
+}
