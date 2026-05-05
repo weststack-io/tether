@@ -730,3 +730,38 @@ Date: 2026-05-04
 - VECTORS-001 (priority 21): `cosineSimilarity(a: number[], b: number[]): number` in src/lib/vectors.ts. Pure function. Acceptance tests are arithmetic only -- identical vectors -> ~1.0, orthogonal -> ~0.0, opposite -> ~-1.0 -- so this is independent of whether real or fallback embeddings are seeded. Unblocks RETRIEVE-001.
 - RETRIEVE-001 (priority 22): `retrieveCandidates(text: string)` in src/lib/drift/retriever.ts that calls generateEmbedding(text), loads all PolicyChunk embeddings, computes cosine similarity, applies threshold 0.3, returns top 15. The threshold semantics will only work with real embeddings (see Blockers above); if a future session implements RETRIEVE-001 against fallback-seeded data, the test should either require a real key or fixture-mock the embedding store.
 - LLM-001 (priority 23): src/lib/ai/llm.ts wrapper that logs every Claude API call to LlmCallLog (purpose, model, prompt, response, tokens, latency). This is independent of the embedding stack and could be done in parallel with VECTORS-001 / RETRIEVE-001.
+
+## Session 21 -- Vector Similarity
+Date: 2026-05-04
+
+### Feature Worked On
+- VECTORS-001: `cosineSimilarity(a: number[], b: number[]): number` in src/lib/vectors.ts — pure function returning the cosine similarity of two equal-length numeric vectors
+- Status: PASSED
+
+### What Was Done
+- Replaced the stub in src/lib/vectors.ts with a single-pass cosine similarity implementation: one for-loop accumulates dot product, ||a||^2, and ||b||^2, then returns dot / (sqrt(normA) * sqrt(normB)). Length-mismatched inputs throw with both lengths in the message; empty inputs throw with "non-empty"; NaN / Infinity in either vector throws "finite" with the offending index. The zero-vector case (either ||a||==0 or ||b||==0) returns 0 rather than dividing by zero so downstream RETRIEVE-001 can rank zero-vector chunks at the bottom without producing NaN. Function-level type guards (Array.isArray) catch non-array callers with TypeError before the loop.
+- Authored __tests__/unit/vectors.test.ts with 8 tests: identical vectors -> ~1.0, parallel-but-different-magnitude vectors -> ~1.0 (verifies magnitude invariance, not in the spec's 4 acceptance steps but confirms the math is right), orthogonal in 2D / 3D / 4D -> ~0.0, opposite vectors -> ~-1.0 (two cases incl. mixed signs), zero vector either side -> 0 (no NaN), length-mismatch throws /length mismatch/, empty throws /non-empty/, non-finite (NaN, Infinity) throws /finite/. All assertions use toBeCloseTo(value, 10) for FP-sensitivity.
+- No new dependencies. The implementation is dependency-free and runs in pure JS arithmetic; the test suite uses the existing @jest/globals + path-aliased import (`@/lib/vectors`) that the rest of the test corpus already uses.
+
+### Files Modified / Created
+- src/lib/vectors.ts (replaced stub; 38 lines)
+- __tests__/unit/vectors.test.ts (new, 8 tests)
+- specs/phase1/feature_list.json (VECTORS-001 passes -> true)
+
+### Testing
+- Verified all 4 acceptance steps for VECTORS-001:
+  1. src/lib/vectors.ts exists and exports cosineSimilarity (`grep export` confirms)
+  2. Identical vectors [0.1, 0.2, 0.3, 0.4, 0.5] vs itself -> 1.0 (toBeCloseTo(1, 10))
+  3. Orthogonal vectors [1,0,0] / [0,1,0] -> 0.0; also confirmed in 2D ([1,0]/[0,1]) and 4D ([1,1,0,0]/[0,0,1,1])
+  4. Opposite vectors [1,2,3] / [-1,-2,-3] -> -1.0; also confirmed [0.5,-0.25,0.75] / [-0.5,0.25,-0.75] -> -1.0
+- Unit test results: `npm test` -> 6 suites / 26 tests passing (was 5 / 18; +1 suite / +8 tests for vectors).
+- Regression: `npx tsc --noEmit` -> zero errors; `curl /` -> 200; `curl /api/health` -> 200 + `{"db":"connected"}`; `curl /alerts` -> 200; `curl /ingestion` -> 200; existing CORPUS-001..010 / SEED-001 / EMBED-001 / EMBED-002 unchanged. The 5 pre-existing test suites (env, types, db, health, embeddings) all still pass.
+
+### Blockers / Issues
+- None. cosineSimilarity is a pure function with no I/O dependency, so it does not depend on real-vs-fallback embeddings (the Session 20 blocker about deterministic SHA-256 fallback vectors only matters once RETRIEVE-001's 0.3 threshold is applied — the cosine math itself is correct regardless of dimension or distribution).
+- One forward-looking caveat: the function does not implement an early-return optimization for the zero-input shortcut (e.g. all-zero loop check before computing norms). That could matter if RETRIEVE-001 calls cosineSimilarity 154 times per query against PolicyChunks that happen to share long zero-prefixes; but realistic embeddings are dense floats with no zeros, so this is theoretical. Not implementing.
+
+### Next Priorities
+- RETRIEVE-001 (priority 22): `retrieveCandidates(text: string)` in src/lib/drift/retriever.ts that calls generateEmbedding(text), JSON-parses each PolicyChunk.embedding, computes cosineSimilarity against the query embedding, applies threshold 0.3, and returns top 15 results sorted by similarity desc. Acceptance steps require the function/export, sample call returns at most 15 chunks, all returned similarity >= 0.3, sort order desc. CAVEAT carried forward from Session 20: the seeded embeddings are 384-dim deterministic SHA-256 fallback vectors (because OPENAI_API_KEY is the placeholder); cosine similarity over those vectors does not carry semantic meaning and the 0.3 threshold may yield zero results for arbitrary regulatory text. Two paths for RETRIEVE-001 verification: (a) inject a real key and re-seed before the acceptance run, or (b) fixture-mock generateEmbedding + the chunk store so the threshold-and-sort behavior is what's actually tested. Path (b) is more robust because it does not require a real API key for the test suite to be green.
+- LLM-001 (priority 23): src/lib/ai/llm.ts wrapper that logs every Claude API call to LlmCallLog (purpose, model, prompt, response, tokens, latency). Independent of the embedding / retrieval stack — could be implemented in parallel.
+- LLM-002 (priority 24): src/lib/ai/prompts.ts with templates for relevanceClassification + driftClassification. Independent of LLM-001 (LLM-001 is the runtime, LLM-002 is the inputs).
