@@ -1210,3 +1210,50 @@ Date: 2026-05-05
 - INGEST-003 (priority 33): CFPB parser. CFPB exposes an RSS feed at https://files.consumerfinance.gov/f/feeds/cfpb_publications.xml (or similar) -- needs verification at implementation time. Same shape as SEC.
 - INGEST-004 (priority 34): OCC parser. OCC bulletins/news live at https://www.occ.gov/news-issuances/ -- they have an RSS feed at https://www.occ.gov/rss/occ_alert.xml. Same shape.
 - INGEST-006 (priority 36): pipeline orchestrator (`src/lib/ingestion/pipeline.ts:runIngestion`) -- the entry point that calls all four parsers, deduplicates by sourceUrl, persists new items, and runs `runDriftDetection` on each new item. Larger session -- save until 2..4 of the parsers are landed.
+
+## Session 32 -- FINRA Parser
+Date: 2026-05-05
+
+### Feature Worked On
+- INGEST-002: `fetchLatest()` in `src/lib/ingestion/parsers/finra.ts` -- fetches FINRA's regulatory-notices RSS feed, parses each `<item>` into a `RawRegulatoryItem`, and falls back to a pre-downloaded `data/regulatory/finra/cache.json` fixture when the live request fails (network, non-2xx, timeout, or zero parseable items). Structurally identical to INGEST-001's SEC parser.
+- Status: PASSED
+
+### What Was Done
+- Replaced the 7-line `finra.ts` stub with a 132-line implementation mirroring `sec.ts`. Same export surface (`fetchLatest`, `parseFinraRss`, `rssItemToRaw`, `FINRA_RSS_URL`, `FINRA_FETCH_TIMEOUT_MS`, `FinraRssItem`); same private helpers (`fetchRss`, `loadCache`, `extractTag`, `decodeEntities`, `stripHtml`); same 3-tier fall-back (live -> cache -> []); same `console.warn` log format with the failing URL/path embedded.
+- Differences vs SEC: `FINRA_RSS_URL = "https://www.finra.org/rules-guidance/notices/rss"`; `regulator: "FINRA"`; `documentType: "regulatory_notice"` (raw vendor-side type, not yet normalized to the `DocumentType` union -- normalization is INGEST-006's job per the same rationale as Session 31).
+- Created `data/regulatory/finra/cache.json` with two fixture items: 25-01 (customer complaint reporting under Rule 4530, complaint-handling domain) and 25-04 (generative AI guidance, info-security/vendor-management domains). Chosen so the cached items eventually exercise drift-detection paths against the synthetic policy corpus when the orchestrator is wired up.
+- Authored `__tests__/unit/finra.test.ts` (147 lines, 11 tests) covering `parseFinraRss` (CDATA, entity decoding, no-items, case-insensitive matching) and `rssItemToRaw` (well-formed mapping, null returns for missing/invalid fields, fullText fallback to title, HTML stripping in titles).
+- Authored `__tests__/integration/finra.test.ts` (138 lines, 5 tests) covering `fetchLatest` end-to-end: (a) live fetch success path -- verifies FINRA_RSS_URL is hit with the contact-bearing User-Agent, parsed items match expected fields; (b) network error path -- mocks `global.fetch` to throw, verifies cache fall-back, asserts the warning log carries the failing URL + error message; (c) HTTP 503 path; (d) empty-feed path; (e) timeout/abort path.
+- Decision: did NOT promote any of the duplicated helpers (`extractTag`, `decodeEntities`, `stripHtml`, `fetchRss`, `loadCache`, `ITEM_BLOCK_RE`) into a shared module. INGEST-005 owns the shared HTTP fetcher utility, and per the Session 25..31 promotion-threshold rule of thumb the right time to extract is when the third caller appears. Two callers (SEC + FINRA) are below the threshold; CFPB will be the third and is a natural promotion trigger. The duplication is mechanical and visible in adjacent files; refactoring now would couple INGEST-002's diff to INGEST-005's surface area.
+- Decision: kept the User-Agent string identical to SEC's (`"Tether Compliance Demo dev@tether.local"`). FINRA does not have SEC's hard contact-UA requirement, but a consistent UA across regulators makes `fetcher.ts` a one-line drop-in when INGEST-005 lands. The placeholder email is still a placeholder; production would update to a real contact.
+
+### Files Modified / Created
+- src/lib/ingestion/parsers/finra.ts (replaced 7-line stub with 132-line implementation)
+- data/regulatory/finra/cache.json (new, 2 fixture items)
+- __tests__/unit/finra.test.ts (new, 11 tests)
+- __tests__/integration/finra.test.ts (new, 5 tests)
+- specs/phase1/feature_list.json (INGEST-002 passes -> true)
+
+### Testing
+- Verified all 4 INGEST-002 acceptance steps:
+  1. `src/lib/ingestion/parsers/finra.ts` exists and exports `fetchLatest`: confirmed by `import { fetchLatest, FINRA_RSS_URL } from "@/lib/ingestion/parsers/finra"` in the integration test (compiles + runs).
+  2. Calling `fetchLatest` returns an array of items: integration test asserts `items.length > 0` (live success) or `items.length > 0` (cache fall-back) across all 5 scenarios; type system enforces `Promise<RawRegulatoryItem[]>`.
+  3. Each item has `regulator='FINRA'` and required fields: integration test loops items asserting `item.regulator === "FINRA"`, `item.sourceUrl` matches /^https?:\/\//, `item.publicationDate` is a valid Date, `item.documentType.length > 0`, `item.title.length > 0`, `item.fullText.length > 0`.
+  4. Parser handles network errors gracefully: 4 fall-back paths exercised -- thrown error (ECONNREFUSED), HTTP 503, empty feed, abort/timeout. None throw out of `fetchLatest`; all return the cached fixture.
+- Test suite results: `npm test` -> 20 suites / 169 tests passing (was 18 / 153; +2 suites / +16 tests for INGEST-002 -- 11 unit + 5 integration). Stable at ~20s.
+- Regression: `npx tsc --noEmit` -> zero errors; `curl /` -> 200; `curl /api/health` -> 200; `curl /alerts` -> 200; `curl /ingestion` -> 200. All 18 pre-existing test suites unchanged. CORPUS-001..010 / SEED-001 / EMBED-001..002 / VECTORS-001 / RETRIEVE-001 / LLM-001..002 / CLASSIFY-001..002 / CITE-001 / SCORE-001 / PIPE-001..002 / INGEST-001 unchanged.
+- No Playwright verification: INGEST-002 has no UI surface (backend module called from the future ingestion pipeline). Browser verification will land with the dashboard's "Trigger Ingestion" button (DASH-002) or the trigger endpoint (API-011), whichever lands first.
+
+### Blockers / Issues
+- The FINRA RSS URL `https://www.finra.org/rules-guidance/notices/rss` is the documented endpoint per FINRA's public site, but at implementation time was not network-verified -- the integration test mocks `global.fetch` and the cache fall-back covers offline / wrong-URL cases. If the live URL has changed (e.g., FINRA migrated the feed), `fetchLatest` will degrade to cache and emit a warning -- production deployment should re-verify and update `FINRA_RSS_URL` if needed. The single-line constant edit makes this trivial.
+- Decision: documentType = "regulatory_notice" as a raw string. The normalized `DocumentType` union includes "notice" -- normalization at the persistence layer (INGEST-006 territory) will collapse "regulatory_notice" / "press_release" / "bulletin" / etc. into the canonical union. Surfacing the raw vendor-side label preserves the discriminator for normalization logic.
+- Decision: all six helpers (`extractTag`, `decodeEntities`, `stripHtml`, `fetchRss`, `loadCache`, `ITEM_BLOCK_RE`) are duplicated byte-for-byte from `sec.ts`. This is intentional code duplication, not an oversight -- per the Session 25..31 rule of thumb, extraction happens at the third caller. Leaving the duplication visible and obvious lets the future extractor see the full pattern in two places.
+- Decision: the two cache fixtures cover complementary domains (complaint handling under Rule 4530; generative AI guidance touching info-security and vendor-management). Intentional spread so the eventual end-to-end pipeline test (INGEST-006 + drift detection) has a non-trivial set of policy domains to retrieve against -- a single-domain fixture would only exercise one chunk's similarity path.
+- Did NOT add `.gitkeep` files in the FINRA cache directory. The directory is created by `mkdir -p` when the cache is written; with the JSON file present, git tracks the directory naturally.
+- Did NOT alter `src/types/index.ts`. The `RawRegulatoryItem` interface added in Session 31 is reused as-is; no FINRA-specific type was needed.
+
+### Next Priorities
+- INGEST-005 (priority 35): HTTP fetcher utility (`src/lib/ingestion/fetcher.ts`). Now that two parsers (SEC + FINRA) duplicate the same `fetchRss` shape with timeout + UA + non-2xx-throws, INGEST-005 is overdue for promotion. CFPB (INGEST-003) and OCC (INGEST-004) would be the third and fourth callers -- promoting before them would be cleanest. Target API: `fetchUrl(url, opts) -> Promise<{ ok: true, body: string } | { ok: false, error: string }>` per the spec's "returns a failure result instead of throwing" requirement.
+- INGEST-003 (priority 33): CFPB parser. Same RSS shape; the candidate URL `https://files.consumerfinance.gov/f/feeds/cfpb_publications.xml` needs verification at implementation time. If implemented after INGEST-005, this parser would be the first user of the shared fetcher.
+- INGEST-004 (priority 34): OCC parser. RSS feed candidate: `https://www.occ.gov/rss/occ_alert.xml`. Same shape.
+- INGEST-006 (priority 36): pipeline orchestrator -- entry point that calls all four parsers, deduplicates by sourceUrl, persists new items, runs `runDriftDetection` on each. Save until at least three of INGEST-001..005 land.
