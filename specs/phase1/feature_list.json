@@ -323,7 +323,7 @@
         "Verify it returns { isRelevant: false, relevantDomains: [], reasoning: <string> }",
         "Verify structured output conforms to the expected JSON schema"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "CLASSIFY-002",

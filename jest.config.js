@@ -4,6 +4,9 @@ const config = {
   testEnvironment: "node",
   roots: ["<rootDir>/__tests__"],
   setupFiles: ["<rootDir>/jest.setup.ts"],
+  // Single writer for SQLite — prevents intermittent "Operation has timed out"
+  // when multiple integration suites race on prisma writes.
+  maxWorkers: 1,
   extensionsToTreatAsEsm: [".ts", ".tsx"],
   moduleNameMapper: {
     "^@/(.*)\\.js$": "<rootDir>/src/$1",
