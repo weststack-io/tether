@@ -230,7 +230,7 @@
         "Verify each chunk has sectionHeading and content populated",
         "Verify chunkIndex is sequential within each document"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "EMBED-001",
