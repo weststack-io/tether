@@ -406,7 +406,7 @@
         "Verify each item has sourceUrl, regulator='SEC', publicationDate, documentType, title, fullText",
         "Verify the parser handles network errors gracefully without crashing"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INGEST-002",

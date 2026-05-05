@@ -139,3 +139,12 @@ export interface IngestionRun {
   itemsSuppressed: number;
   errors: string | null;
 }
+
+export interface RawRegulatoryItem {
+  sourceUrl: string;
+  regulator: Regulator;
+  publicationDate: Date;
+  documentType: string;
+  title: string;
+  fullText: string;
+}
