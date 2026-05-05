@@ -54,7 +54,7 @@
         "Verify it exports types for RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, DriftClassification, Severity, AlertStatus, Regulator",
         "Run 'npx tsc --noEmit' and confirm zero errors"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LAYOUT-001",

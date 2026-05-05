@@ -131,3 +131,35 @@ Date: 2026-05-04
 - INFRA-004: Shared TypeScript types in src/types/index.ts (verify exports cover RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, DriftClassification, Severity, AlertStatus, Regulator)
 - LAYOUT-001 / LAYOUT-002 for navigation shell + active state
 - API-001 health endpoint verification (already returns the right shape; mostly a feature_list update if no regressions)
+
+## Session 4 -- Infrastructure
+Date: 2026-05-04
+
+### Feature Worked On
+- INFRA-004: Shared TypeScript types in src/types/index.ts cover all domain types used across the application
+- Status: PASSED
+
+### What Was Done
+- Extended src/types/index.ts with model interfaces for RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun. The file already had the enum-like string union types (Regulator, DriftClassification, Severity, AlertStatus, AlertAction, DismissReason, DocumentType, IngestionTrigger); added PolicyDomain, IngestionStatus, AuditActor, AuditAction unions to feed the interfaces with narrowed enum-like fields rather than bare `string`.
+- Each interface mirrors the Prisma schema's column shape (Date/number/string/null) but with enum-like fields typed as the domain unions, so call sites get exhaustive switches instead of stringly-typed branches. Relation arrays (e.g. `alerts: Alert[]` on RegulatoryItem) intentionally omitted -- they are query-shape concerns, not the row shape.
+- Added __tests__/unit/types.test.ts that constructs a representative value of each interface (RegulatoryItem, PolicyDocument + PolicyChunk, Alert, AuditEntry, IngestionRun, plus a Regulator union assignment). The test is mostly a compile-time contract guard since types are erased at runtime; it locks in the exported names + field shapes so future refactors that drop a field break the build.
+
+### Files Modified / Created
+- src/types/index.ts (added 4 enum unions + 6 model interfaces)
+- __tests__/unit/types.test.ts (new -- 5 tests)
+- specs/phase1/feature_list.json (INFRA-004 passes -> true)
+
+### Testing
+- `npx tsc --noEmit` -> zero errors (before and after the new test)
+- `npm test` -> 3 suites, 10 tests passing (3 db + 2 env + 5 types)
+- Regression: `curl http://localhost:3000/` -> 200 (LAYOUT/INFRA-001), `curl http://localhost:3000/api/health` -> 200 (INFRA-002/003)
+- Grepped src/ for existing `@/types` consumers before changing the file -- none yet, so no risk of breakage
+
+### Blockers / Issues
+- None. The interfaces are not derived from Prisma's generated client because that client types every enum-like column as bare `string`; adopting it directly would lose the union narrowing that the verification step asks for. If we ever want to share row shapes with Prisma payloads, we'll need a small mapper rather than a re-export.
+
+### Next Priorities
+- LAYOUT-001: Verify sidebar navigation (Dashboard / Alerts / Ingestion Log links, 240px width, header title/subtitle) -- already scaffolded in Session 0; mostly a Playwright verification + feature_list update unless the shell needs polish
+- LAYOUT-002: Active navigation state highlight in the sidebar (likely a usePathname check on the existing nav links)
+- API-001: Health endpoint shape verification (already returns the right JSON; just needs a Jest integration test + feature_list update)
+- After LAYOUT/API basics: CORPUS-001..010 to seed the policy corpus
