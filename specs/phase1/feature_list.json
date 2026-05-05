@@ -216,7 +216,7 @@
         "Verify it contains Purpose, Scope, Definitions, and domain-specific sections",
         "Verify it is marked as synthetic and is 2-5 pages"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "SEED-001",
