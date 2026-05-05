@@ -380,7 +380,7 @@
         "Verify alerts were created in the Alert table with all required fields populated",
         "Verify AuditEntry records were created for each alert with actor='system' and action='created'"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "PIPE-002",
