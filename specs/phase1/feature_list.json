@@ -68,7 +68,7 @@
         "Verify header bar displays 'Tether' as app title and 'Regulatory Drift Detector' as subtitle",
         "Click each sidebar link and verify it navigates to the correct page"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LAYOUT-002",

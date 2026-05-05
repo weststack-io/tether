@@ -163,3 +163,36 @@ Date: 2026-05-04
 - LAYOUT-002: Active navigation state highlight in the sidebar (likely a usePathname check on the existing nav links)
 - API-001: Health endpoint shape verification (already returns the right JSON; just needs a Jest integration test + feature_list update)
 - After LAYOUT/API basics: CORPUS-001..010 to seed the policy corpus
+
+## Session 5 -- UI Layout
+Date: 2026-05-04
+
+### Feature Worked On
+- LAYOUT-001: Application shell with fixed left sidebar (Dashboard / Alerts / Ingestion Log) at 240px width, header bar with "Tether" title and "Regulatory Drift Detector" subtitle
+- Status: PASSED
+
+### What Was Done
+- Verification only -- the shell from Session 0 already met every spec requirement, so no code changes were needed. Sidebar at src/components/layout/Sidebar.tsx is `fixed left-0 top-0 w-[240px]`, header at src/components/layout/Header.tsx renders both the "Tether" h1 and the "Regulatory Drift Detector" subtitle, and src/app/layout.tsx wires both into the root layout.
+- Marked LAYOUT-001 passes -> true in specs/phase1/feature_list.json (the only allowed mutation per the workflow rules).
+
+### Files Modified / Created
+- specs/phase1/feature_list.json (LAYOUT-001 passes -> true)
+- specs/phase1/screenshots/LAYOUT-001.png (Dashboard view)
+- specs/phase1/screenshots/LAYOUT-001-alerts.png (Alerts view)
+- specs/phase1/screenshots/LAYOUT-001-ingestion.png (Ingestion Log view)
+
+### Testing
+- Regression: `curl http://localhost:3000/api/health` -> 200 with {status:"ok",db:"connected"}, `npm test` -> 3 suites / 10 tests passing
+- All three routes (`/`, `/alerts`, `/ingestion`) -> 200
+- Playwright at /: aside.getBoundingClientRect().width === 240, position: fixed, left: 0; header text contains both "Tether" and "Regulatory Drift Detector"
+- Playwright accessibility snapshot confirms sidebar nav has links with /url=/, /alerts, /ingestion in that order
+- Clicked each sidebar link in turn (Alerts, Ingestion Log, Dashboard); URL and active highlight followed each click. Screenshots captured after each navigation.
+- `npx tsc --noEmit` -> zero errors
+
+### Blockers / Issues
+- None. Note for next sessions: LAYOUT-002 (active-state highlight) is already implemented inline in Sidebar.tsx via usePathname + the bg-primary class on isActive. Verification of LAYOUT-002 should mostly mirror this session's screenshots, since they already show the correct link highlighted on each route.
+
+### Next Priorities
+- LAYOUT-002: Active navigation state highlight -- already implemented; just verify with Playwright + take dedicated screenshots and flip passes -> true
+- API-001: Health endpoint shape verification (response already matches; add a Jest integration test against the route and flip passes -> true)
+- CORPUS-001 onwards once layout/API basics are confirmed
