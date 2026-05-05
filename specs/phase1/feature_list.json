@@ -108,7 +108,7 @@
         "Verify it is marked as synthetic in the header",
         "Verify it is 2-5 pages of substantive policy language"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "CORPUS-002",

@@ -258,3 +258,37 @@ Date: 2026-05-04
 - CORPUS-001..010: Author the 10 dummy policy markdown files in data/policies/ (BSA/AML, complaint handling, fair lending, Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing). Each 2-5 pages with Purpose/Scope/Definitions + domain sections and a synthetic-data header. Unblocks SEED-001 / EMBED-002 / RETRIEVE-001.
 - After CORPUS: SEED-001 to chunk + persist them; then EMBED-001/EMBED-002 for vector storage.
 - After CORPUS: SEED-001 to chunk + persist them, then EMBED-001/EMBED-002 for vector storage
+
+## Session 8 -- Policy Corpus
+Date: 2026-05-04
+
+### Feature Worked On
+- CORPUS-001: BSA/AML dummy policy document created with realistic sections covering anti-money laundering program requirements
+- Status: PASSED
+
+### What Was Done
+- Authored data/policies/bsa-aml.md (~1,927 words, ~4-5 pages). Front matter labels it "Synthetic document for demo purposes only" and identifies the fictional bank ("Meridian Trust Bank, N.A."), policy ID, owner, version, effective date, and review cycle.
+- Structure follows the spec's required template (## Purpose, ## Scope, ## Definitions, domain-specific ## sections, ## Compliance Monitoring, ## Violations and Enforcement). 17 ## headings total, which will give SEED-001 a healthy chunk count once split-on-## chunking lands.
+- Domain-specific sections cover the four/five-pillar AML program: Governance and the BSA Officer, Risk Assessment, CIP (cross-references the future POL-CIP-001 doc that CORPUS-008 will create), CDD + Beneficial Ownership, EDD, Suspicious Activity Monitoring/SAR, CTR, OFAC, 314(a)/314(b), Training, Independent Testing, Recordkeeping. Citations to 31 U.S.C. 5311 et seq., 31 C.F.R. Chapter X, and FinCEN forms (CTR/SAR/Beneficial Owner) are included so future drift-detection LLM calls have realistic anchors to quote against.
+- Definitions are domain-narrowed (Beneficial Owner @ 25%, CTR threshold @ $10k, CDD/EDD, OFAC, PEP, SAR, Structuring) -- these are the terms that drift classifications are most likely to hinge on.
+
+### Files Modified / Created
+- data/policies/bsa-aml.md (new, 137 lines / 1,927 words)
+- specs/phase1/feature_list.json (CORPUS-001 passes -> true)
+
+### Testing
+- Verified all 4 acceptance steps:
+  1. data/policies/bsa-aml.md exists
+  2. Contains Purpose, Scope, Definitions, and domain-specific sections (`awk '/^## /'` lists 17 headings hitting all required + AML-specific topics)
+  3. Marked synthetic in header (`*Synthetic document for demo purposes only*`)
+  4. 1,927 words ≈ 4-5 typeset pages -> within the 2-5 page requirement
+- Regression: `npm test` -> 4 suites / 11 tests passing; `curl /` and `curl /api/health` -> 200/200
+- `npx tsc --noEmit` -> zero errors
+
+### Blockers / Issues
+- None. The policy text is a documentation file, not code, so no test or build-pipeline interaction. SEED-001 will need to be aware that the markdown contains a frontmatter-style intro block (Document ID / Owner / Version etc.) BEFORE the first `## ` heading -- that intro should either become the document's preamble (`fullText` prefix, no chunk) or be excluded from chunking. Easiest path: when SEED-001 splits at ##, treat anything before the first ## as the document header and persist as part of fullText only, not as a PolicyChunk.
+
+### Next Priorities
+- CORPUS-002: data/policies/complaint-handling.md -- mirror the same structure (Purpose / Scope / Definitions / domain sections / Compliance Monitoring / Violations) with consumer complaint handling (Reg DD interplay, CFPB consumer response, complaint logging, root cause review)
+- CORPUS-003..010: fair lending, Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing, in priority order
+- After CORPUS-010 unblocks: SEED-001 (chunk-on-## seed script), then EMBED-001/002 (vector storage)
