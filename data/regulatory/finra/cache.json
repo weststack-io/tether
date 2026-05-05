@@ -1,0 +1,18 @@
+[
+  {
+    "sourceUrl": "https://www.finra.org/rules-guidance/notices/25-01",
+    "regulator": "FINRA",
+    "publicationDate": "2025-01-15T14:00:00Z",
+    "documentType": "regulatory_notice",
+    "title": "FINRA Reminds Member Firms of Their Obligations Regarding Customer Complaint Reporting",
+    "fullText": "FINRA reminds member firms of their obligations under FINRA Rule 4530 to report customer complaints and certain disciplinary information promptly. The notice clarifies that complaints alleging theft, misappropriation of funds or securities, or forgery must be reported within 30 calendar days of receipt. Firms must establish written supervisory procedures reasonably designed to capture, track, and escalate customer complaints, including complaints received through digital channels such as social media, mobile applications, and chat features. The notice also addresses recordkeeping obligations under Rule 4511 and SEC Rule 17a-4 for retaining complaint correspondence. Firms that fail to maintain adequate complaint-intake systems or fail to report qualifying complaints within the prescribed timeframes may be subject to disciplinary action."
+  },
+  {
+    "sourceUrl": "https://www.finra.org/rules-guidance/notices/25-04",
+    "regulator": "FINRA",
+    "publicationDate": "2025-02-10T13:30:00Z",
+    "documentType": "regulatory_notice",
+    "title": "FINRA Provides Guidance on Use of Generative Artificial Intelligence in Member Firm Operations",
+    "fullText": "This Regulatory Notice provides guidance to member firms regarding the use of generative artificial intelligence and large language models in connection with broker-dealer activities. Firms remain responsible for compliance with all applicable FINRA rules, including supervision (Rule 3110), communications with the public (Rule 2210), customer information protection (Reg S-P), and books and records requirements (Rule 4511). Firms using generative AI tools to draft customer communications, summarize research, or assist registered representatives must establish written supervisory procedures addressing model selection, output review, recordkeeping of prompts and outputs, and testing for accuracy and bias. Firms are reminded that any communications generated or substantially modified by AI that are distributed to customers constitute communications with the public subject to principal approval and filing requirements where applicable."
+  }
+]
