@@ -228,4 +228,33 @@ Date: 2026-05-04
 ### Next Priorities
 - API-001: Health endpoint shape verification -- the route already returns {status, timestamp, db}; needs a Jest integration test asserting the response shape and a 200 status, then flip passes -> true
 - CORPUS-001..010: Author the 10 dummy policy markdown files in data/policies/ (BSA/AML, complaint handling, fair lending, Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing). Each must be 2-5 pages with Purpose/Scope/Definitions + domain sections and a synthetic-data header. These unblock SEED-001 / EMBED-002 / RETRIEVE-001
+
+## Session 7 -- API
+Date: 2026-05-04
+
+### Feature Worked On
+- API-001: Health check endpoint returns status, timestamp, and database connection status
+- Status: PASSED
+
+### What Was Done
+- The route at src/app/api/health/route.ts already returned the correct shape ({status:"ok", timestamp:<ISO>, db:"connected"}) from prior scaffolding; no code changes were needed.
+- Added __tests__/integration/health.test.ts which imports the GET handler directly (rather than going over HTTP), invokes it, and asserts: response.status === 200, body.status === "ok", body.db === "connected", and that body.timestamp round-trips through Date.toISOString() (proving it's a real ISO 8601 string).
+- Marked API-001 passes -> true in specs/phase1/feature_list.json (the only allowed mutation).
+
+### Files Modified / Created
+- __tests__/integration/health.test.ts (new -- 1 test covering all three verification steps)
+- specs/phase1/feature_list.json (API-001 passes -> true)
+
+### Testing
+- `npm test` -> 4 suites, 11 tests passing (3 db + 2 env + 5 types + 1 health)
+- `npx tsc --noEmit` -> zero errors
+- `curl http://localhost:3000/api/health` -> 200 with {"status":"ok","timestamp":"2026-05-05T02:02:15.564Z","db":"connected"} (live shape matches Jest assertion)
+- Regression: `curl` on /, /alerts, /ingestion all 200 before changes; full test suite green before adding the new file
+
+### Blockers / Issues
+- Calling the GET handler directly works fine in the ESM Jest setup -- next/server's NextResponse loaded without any extra config. Future API integration tests should follow the same direct-import pattern instead of standing up a fetch-mock or hitting localhost:3000, so the test suite stays self-contained.
+
+### Next Priorities
+- CORPUS-001..010: Author the 10 dummy policy markdown files in data/policies/ (BSA/AML, complaint handling, fair lending, Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing). Each 2-5 pages with Purpose/Scope/Definitions + domain sections and a synthetic-data header. Unblocks SEED-001 / EMBED-002 / RETRIEVE-001.
+- After CORPUS: SEED-001 to chunk + persist them; then EMBED-001/EMBED-002 for vector storage.
 - After CORPUS: SEED-001 to chunk + persist them, then EMBED-001/EMBED-002 for vector storage

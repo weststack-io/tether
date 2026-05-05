@@ -95,7 +95,7 @@
         "Verify response contains { status: 'ok', timestamp: <ISO string>, db: 'connected' }",
         "Verify response status code is 200"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "CORPUS-001",
