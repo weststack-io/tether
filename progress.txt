@@ -58,3 +58,39 @@ Date: 2026-05-04
 - INFRA-003: Environment configuration (.env.example completeness)
 - INFRA-004: Shared TypeScript types in src/types/index.ts
 - LAYOUT-001/LAYOUT-002 for navigation polish
+
+## Session 2 -- Infrastructure
+Date: 2026-05-04
+
+### Feature Worked On
+- INFRA-002: Prisma schema with all 7 data models, SQLite database connected, singleton client
+- Status: PASSED
+
+### What Was Done
+- Verified prisma/schema.prisma declares all 7 models (RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, LlmCallLog) using the prisma-client (ESM) generator
+- Ran `npx prisma generate` -> regenerated client into src/generated/prisma
+- Ran `npx prisma db push` -> "database is already in sync"
+- Confirmed src/lib/db.ts exports a libsql-adapter-backed PrismaClient singleton (cached on globalThis to survive Next.js dev hot-reloads)
+- Added __tests__/integration/db.test.ts asserting (a) `SELECT 1` round-trips through the adapter, (b) every declared model delegate is exposed, (c) re-importing returns the same singleton
+- Reconfigured Jest for ESM: switched preset to `ts-jest/presets/default-esm`, added per-test transform with `useESM: true` + esnext module/bundler resolution, dropped to `--experimental-vm-modules` via npm test script. Required because the Prisma 7 generated client uses top-level `import.meta.url`, which CommonJS ts-jest can't load
+- Used `@jest/globals` imports instead of relying on ambient jest types (avoids needing @types/jest just for this)
+
+### Files Modified / Created
+- jest.config.js (rewrote for ESM)
+- package.json (test scripts now set NODE_OPTIONS=--experimental-vm-modules)
+- __tests__/integration/db.test.ts (new)
+
+### Testing
+- `npm test` -> 1 suite, 3 tests passing (raw query, model delegates, singleton identity)
+- `npx tsc --noEmit` -> zero errors
+- `curl http://localhost:3000/` -> 200 (regression check before changes)
+
+### Blockers / Issues
+- Prisma 7 generates ESM-only client (top-level `import.meta.url`); any test or script that imports `@/lib/db` MUST run under Node ESM. The npm test scripts now do this, but ad-hoc `npx jest` invocations will need the same NODE_OPTIONS flag.
+- prisma.config.ts supplies the datasource URL (`process.env.DATABASE_URL`), so schema.prisma intentionally omits a `url = ...` in its datasource block. Don't "fix" it by re-adding one — the two would conflict.
+
+### Next Priorities
+- INFRA-003: Environment configuration audit (.env.example currently has all required keys; just needs init.sh verification + Next.js runtime read)
+- INFRA-004: Shared TypeScript types in src/types/index.ts (already exists -- verify exports cover RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, DriftClassification, Severity, AlertStatus, Regulator)
+- LAYOUT-001/LAYOUT-002 for navigation polish
+- API-001 health endpoint verification

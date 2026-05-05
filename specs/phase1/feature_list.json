@@ -30,7 +30,7 @@
         "Verify src/lib/db.ts exports a singleton Prisma client",
         "Import the Prisma client in a test file and confirm it connects"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INFRA-003",
