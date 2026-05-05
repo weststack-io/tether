@@ -296,7 +296,7 @@
         "Verify the record contains purpose, model, prompt, response, tokenInput, tokenOutput, latencyMs",
         "Verify latencyMs is a positive number"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LLM-002",
