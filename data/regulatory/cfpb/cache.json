@@ -1,0 +1,18 @@
+[
+  {
+    "sourceUrl": "https://www.consumerfinance.gov/about-us/newsroom/cfpb-issues-circular-on-fair-lending-marketing-practices/",
+    "regulator": "CFPB",
+    "publicationDate": "2025-02-18T15:00:00Z",
+    "documentType": "publication",
+    "title": "CFPB Issues Circular on Fair Lending Implications of Targeted Marketing Practices",
+    "fullText": "The Consumer Financial Protection Bureau today issued a circular addressing the fair lending implications of targeted marketing and advertising practices used by financial institutions. The circular reaffirms that the Equal Credit Opportunity Act and Regulation B prohibit creditors from discriminating in any aspect of a credit transaction on a prohibited basis, including through digital advertising tools that may steer or limit access to credit offers based on protected characteristics. Creditors are reminded that they remain responsible for compliance when they use third-party platforms or algorithmic targeting tools, and that they must implement reasonable policies and procedures to monitor advertising audience composition and outcomes. The circular outlines record retention obligations under Regulation B for prescreened solicitations and digital marketing campaigns, and warns that failure to monitor disparate impact in marketing audiences may constitute a violation of ECOA. Institutions are urged to review their fair lending compliance management systems, consumer compliance training, and complaint-monitoring procedures in light of this guidance."
+  },
+  {
+    "sourceUrl": "https://www.consumerfinance.gov/about-us/newsroom/cfpb-finalizes-overdraft-rule-large-banks/",
+    "regulator": "CFPB",
+    "publicationDate": "2025-03-05T13:30:00Z",
+    "documentType": "publication",
+    "title": "CFPB Finalizes Rule on Overdraft Fees Charged by Very Large Financial Institutions",
+    "fullText": "The Consumer Financial Protection Bureau today finalized a rule limiting overdraft fees charged by very large financial institutions, defined as banks and credit unions with more than $10 billion in assets. The final rule treats overdraft credit as consumer credit subject to the Truth in Lending Act and Regulation Z when an institution charges fees in excess of a benchmark amount. Covered institutions must provide consumers with disclosures, including the cost of credit expressed as an annual percentage rate, and must comply with TILA's substantive protections. The rule preserves three options for covered institutions: charge a courtesy fee at or below the benchmark, charge a fee that recovers the institution's costs and losses with documentation, or treat the overdraft service as a covered credit product subject to TILA. Institutions must update consumer disclosures, deposit account agreements, and supervisory procedures to reflect the rule's effective date. The Bureau notes that institutions remain subject to UDAAP and Regulation E protections regardless of which option they elect."
+  }
+]

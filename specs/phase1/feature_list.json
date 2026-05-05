@@ -432,7 +432,7 @@
         "Verify each item has regulator='CFPB' and required fields",
         "Verify the parser handles network errors gracefully"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INGEST-004",
