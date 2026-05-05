@@ -243,7 +243,7 @@
         "Verify it returns a numeric array (float vector)",
         "Verify the embedding provider is read from environment variables"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "EMBED-002",
