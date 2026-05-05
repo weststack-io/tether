@@ -350,7 +350,7 @@
         "Call verifyCitations with a fabricated quote not in the source and verify it returns false",
         "Verify that when verification fails, the alert is suppressed (not created)"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "SCORE-001",
