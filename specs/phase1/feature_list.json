@@ -458,7 +458,7 @@
         "Call the fetcher with a valid URL and verify it returns the content",
         "Verify errors are logged with context about which URL failed"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INGEST-006",

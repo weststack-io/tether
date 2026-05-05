@@ -9,16 +9,18 @@
 // The parser is intentionally regex-based -- the project has no XML library
 // dep, and the SEC RSS shape is stable enough that a tag-extractor handles it
 // without pulling in jsdom/cheerio for one feed.
+//
+// HTTP transport (timeout / User-Agent / non-2xx -> failure result) is
+// delegated to `@/lib/ingestion/fetcher` (INGEST-005); see that module for
+// the rationale on the shared User-Agent + Accept header.
 
 import { promises as fs } from "node:fs";
 import { resolve } from "node:path";
+import { fetchUrl } from "@/lib/ingestion/fetcher";
 import type { RawRegulatoryItem } from "@/types";
 
 export const SEC_RSS_URL = "https://www.sec.gov/news/pressreleases.rss";
 export const SEC_FETCH_TIMEOUT_MS = 10_000;
-// SEC's developer guidelines require a User-Agent that identifies the caller
-// with a contact email. https://www.sec.gov/os/accessing-edgar-data
-const SEC_USER_AGENT = "Tether Compliance Demo dev@tether.local";
 
 const CACHE_PATH = resolve(process.cwd(), "data/regulatory/sec/cache.json");
 
@@ -87,26 +89,6 @@ export function rssItemToRaw(item: SecRssItem): RawRegulatoryItem | null {
   };
 }
 
-async function fetchRss(url: string, timeoutMs: number): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": SEC_USER_AGENT,
-        Accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.5",
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
-    }
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function loadCache(): Promise<RawRegulatoryItem[]> {
   const text = await fs.readFile(CACHE_PATH, "utf-8");
   const parsed = JSON.parse(text) as Array<Omit<RawRegulatoryItem, "publicationDate"> & { publicationDate: string }>;
@@ -117,19 +99,20 @@ async function loadCache(): Promise<RawRegulatoryItem[]> {
 }
 
 export async function fetchLatest(): Promise<RawRegulatoryItem[]> {
-  try {
-    const xml = await fetchRss(SEC_RSS_URL, SEC_FETCH_TIMEOUT_MS);
-    const items = parseSecRss(xml)
+  const result = await fetchUrl(SEC_RSS_URL, {
+    timeoutMs: SEC_FETCH_TIMEOUT_MS,
+  });
+  if (result.ok) {
+    const items = parseSecRss(result.body)
       .map(rssItemToRaw)
       .filter((x): x is RawRegulatoryItem => x !== null);
     if (items.length > 0) return items;
     console.warn(
       `[sec.fetchLatest] live fetch ${SEC_RSS_URL} returned 0 parseable items, falling back to cache`,
     );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  } else {
     console.warn(
-      `[sec.fetchLatest] live fetch ${SEC_RSS_URL} failed (${message}); falling back to cache`,
+      `[sec.fetchLatest] live fetch ${SEC_RSS_URL} failed (${result.error}); falling back to cache`,
     );
   }
   try {
