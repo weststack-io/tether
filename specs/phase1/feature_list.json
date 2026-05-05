@@ -269,7 +269,7 @@
         "Call cosineSimilarity with two orthogonal vectors and verify result is ~0.0",
         "Call cosineSimilarity with opposite vectors and verify result is ~-1.0"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "RETRIEVE-001",
