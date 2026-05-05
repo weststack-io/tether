@@ -613,3 +613,42 @@ Date: 2026-05-04
   10. data/policies/marketing.md (POL-MKT-001)
 - SEED-001 (priority 18) is the next feature: a Prisma seed script that loads all 10 policy documents into PolicyDocument table and chunks them into PolicyChunk records split at ## headings. Per the SEED-001 caveat noted in CORPUS-001..010, the front matter (lines 1-9, before the first `## ` heading) must be persisted as document preamble / fullText prefix on PolicyDocument, NOT as a PolicyChunk. Each ## section becomes one PolicyChunk with sectionHeading (the heading text without the `## ` prefix), content (the text up to the next `## ` heading or EOF), and chunkIndex (sequential within document). Acceptance: 10 PolicyDocument rows; each has multiple PolicyChunk rows; sectionHeading and content populated; chunkIndex sequential.
 - After SEED-001: EMBED-001 / EMBED-002 (vector storage and embedding generation), then RETRIEVE-001 (similarity search over chunks).
+
+## Session 18 -- Data Seeding
+Date: 2026-05-04
+
+### Feature Worked On
+- SEED-001: Prisma seed script that loads all 10 policy documents into PolicyDocument and chunks each at `## ` headings into sequential PolicyChunk rows
+- Status: PASSED
+
+### What Was Done
+- Authored prisma/seed.ts. Loads dotenv from .env.local then .env (matching the runtime), opens the libsql client at DATABASE_URL, validates that data/policies/ contains exactly the 10 expected filenames mapped to their schema-required `domain` strings (bsa-aml.md->bsa_aml, complaint-handling.md->complaint_handling, fair-lending.md->fair_lending, reg-e.md->reg_e, reg-z.md->reg_z, vendor-management.md->vendor_management, info-security.md->info_security, cip.md->cip, overdraft.md->overdraft, marketing.md->marketing), parses the `# Title` line into `PolicyDocument.title`, stores the entire file (front matter + body) in `PolicyDocument.fullText`, walks the file line-by-line to chunk on `^##\s+` headings (front matter before the first `## ` heading is intentionally NOT emitted as a chunk -- it lives only in `fullText` -- per the CORPUS-001..010 caveat), and writes each section as one PolicyChunk with `sectionHeading` (the heading text without the `## ` prefix, e.g. "1. Purpose"), `content` (the lines up to the next `## ` or EOF, with leading/trailing blank lines trimmed), and `chunkIndex` (0-based, sequential per document). `embedding` is left null (EMBED-002 will populate). Idempotent: `DELETE FROM PolicyChunk; DELETE FROM PolicyDocument` runs before every insert pass so re-running seed is safe. IDs are generated client-side as `c<base36-time><16-hex-random>` -- prefix `c` matches the cuid-shape that Prisma's @default(cuid()) emits and avoids needing the Prisma client at seed time.
+- Updated prisma.config.ts: replaced `import "dotenv/config"` with explicit `loadEnv({ path: ".env.local" })` then `loadEnv({ path: ".env" })` (mirroring Next.js's precedence rule that .env.local overrides .env), and registered `migrations.seed: "node --experimental-strip-types prisma/seed.ts"` so `npx prisma db seed` discovers the script. Node 24 ships `--experimental-strip-types` natively, so the seed runs without tsx/ts-node — preserves the no-new-deps rule.
+- Pre-existing env mismatch fixed in passing: prisma.config.ts previously loaded only `.env` (DATABASE_URL=file:./dev.db) while Next.js loaded `.env.local` (DATABASE_URL=file:./prisma/dev.db), so the Prisma CLI and the runtime were operating on different SQLite files. After the prisma.config.ts change above, both now resolve to `file:./prisma/dev.db` (the path .env.example documents). `npx prisma db push --accept-data-loss` was run once to materialize the schema at the now-canonical `./prisma/dev.db`. The stale `./dev.db` (69 KB, schema only, no data) is gitignored and was left in place to avoid surprising deletions; future sessions can `rm dev.db` if it confuses anyone, since DATABASE_URL no longer points there.
+
+### Files Modified / Created
+- prisma/seed.ts (new, 132 lines, ESM-by-syntax, no extra deps beyond already-present dotenv + @libsql/client)
+- prisma.config.ts (updated env loading + added migrations.seed)
+- specs/phase1/feature_list.json (SEED-001 passes -> true)
+- prisma/dev.db (now the canonical seeded DB; 548,864 bytes after seed)
+
+### Testing
+- Verified all 5 acceptance steps for SEED-001:
+  1. `npx prisma db seed` -> "🌱  The seed command has been executed." with per-file lines: bsa-aml (17), cip (14), complaint-handling (12), fair-lending (16), info-security (18), marketing (18), overdraft (17), reg-e (14), reg-z (14), vendor-management (14) -> 154 PolicyChunk rows total.
+  2. `SELECT COUNT(*) FROM PolicyDocument` -> 10
+  3. Per-document chunk counts: 17 / 14 / 12 / 16 / 18 / 18 / 17 / 14 / 14 / 14 (every doc has multiple chunks)
+  4. `SELECT COUNT(*) FROM PolicyChunk WHERE sectionHeading IS NULL OR sectionHeading = '' OR content IS NULL OR content = ''` -> 0
+  5. Per-document `chunkIndex` sequence verified 0..N-1 with no gaps for all 10 documents (0 sequential-index failures)
+- Spot-checked bsa_aml first 5 chunks: ["1. Purpose"] / ["2. Scope"] / ["3. Definitions"] / ["4. Governance and the BSA Officer"] / ["5. Risk Assessment"] -- headings stripped of `## ` prefix as required, body content non-empty, no front matter leaked into chunks.
+- Idempotency: re-ran `npx prisma db seed` to verify the DELETE-before-INSERT pattern -- counts stayed at 10/154, no PRIMARY KEY collisions.
+- Regression: `npm test` -> 4 suites / 11 tests passing; `npx tsc --noEmit` -> zero errors; `curl /` -> 200; `curl /api/health` -> 200 and `{"db":"connected"}` (now connected to the seeded DB after the env unification); `curl /alerts` -> 200; `curl /ingestion` -> 200; CORPUS-001..010 markdown files unchanged.
+
+### Blockers / Issues
+- None for SEED-001 itself. Two notes for future sessions:
+  1. The seed runs under Node 24's `--experimental-strip-types`. If the project later adds a CI runner pinned to Node 20.x, the seed script will need a tsx/ts-node devDependency (or the seed command in prisma.config.ts will need to point at a precompiled .js).
+  2. `embedding` is intentionally left null on every PolicyChunk; EMBED-002 is the feature that will backfill it. The seed's INSERT statements explicitly bind null so the column type is preserved; EMBED-002 can either UPDATE in place or extend the seed.
+
+### Next Priorities
+- EMBED-001 (priority 19): src/lib/ai/embeddings.ts that exports `generateEmbedding(text: string): Promise<number[]>` reading EMBEDDING_PROVIDER (openai|voyage), EMBEDDING_MODEL, and the corresponding API key from env. Acceptance steps require the file/export, a sample call returning a numeric array, and provider read from env. Consider designing the function so that EMBED-002 (which has to embed all 154 PolicyChunks) can batch through it efficiently rather than calling once per chunk.
+- EMBED-002 (priority 20): generate embeddings for all 154 PolicyChunks during (or after) seed and store in `PolicyChunk.embedding` as JSON-stringified float arrays. Easiest path: extend prisma/seed.ts to call generateEmbedding per chunk (or per batch) before INSERT. Acceptance requires seed to populate embedding on every chunk.
+- VECTORS-001 (priority 21) and RETRIEVE-001 (priority 23) follow once embeddings are present.
