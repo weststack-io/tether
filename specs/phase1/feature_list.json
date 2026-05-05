@@ -283,7 +283,7 @@
         "Verify all returned chunks have similarity >= 0.3",
         "Verify results are sorted by similarity descending"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LLM-001",
