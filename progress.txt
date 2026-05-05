@@ -358,3 +358,36 @@ Date: 2026-05-04
 - CORPUS-004: data/policies/reg-e.md -- Purpose / Scope / Definitions / domain sections covering Regulation E (12 C.F.R. Part 1005) electronic fund transfers: error resolution timing (10 / 45 / 90 days), unauthorized EFT liability tiers ($50 / $500 / unlimited), provisional credit, periodic statements, ATM disclosure, and overdraft opt-in for one-time debit/ATM. Same template as CORPUS-001..003.
 - CORPUS-005..010: Reg Z, vendor management, info security, CIP, overdraft, marketing, in priority order
 - After CORPUS-010 unblocks: SEED-001 (chunk-on-## seed script), then EMBED-001/002 (vector storage)
+
+## Session 11 -- Policy Corpus
+Date: 2026-05-04
+
+### Feature Worked On
+- CORPUS-004: Regulation E (electronic fund transfers) dummy policy document with realistic sections covering EFTA + Regulation E (12 C.F.R. Part 1005): error resolution windows, consumer liability tiers for unauthorized EFTs, provisional credit, periodic statements, ATM disclosures, and Section 1005.17 affirmative opt-in for one-time debit/ATM overdraft fees
+- Status: PASSED
+
+### What Was Done
+- Authored data/policies/reg-e.md (~2,910 words, ~5 typeset pages). Front matter labels it "Synthetic document for demo purposes only", attributes it to "Meridian Trust Bank, N.A." (consistent with CORPUS-001/002/003), and identifies POL-REGE-001 / Deposit Operations Compliance Manager as the policy ID and owner.
+- Structure mirrors CORPUS-001/002/003: ## 1 Purpose, ## 2 Scope, ## 3 Definitions, then eleven domain-specific sections (Initial and Change-in-Terms Disclosures, Periodic Statements and Receipts, Consumer Liability for Unauthorized EFTs, Error Resolution Procedures, Overdraft Opt-In for One-Time Debit Card and ATM Transactions, Preauthorized Transfers and Stop-Payment Rights, ATM Disclosures and Network Fees, Recordkeeping, Compliance Monitoring, Training, Violations and Enforcement). 14 ## headings total -- comparable per-document chunk count once SEED-001's split-on-## chunker lands.
+- Definitions narrow the rule-driven terms most likely to anchor future drift classifications: EFT (12 C.F.R. 1005.3(b) with the 1005.3(c) exclusion list), Access Device, Unauthorized EFT (with the 1005.2(m) exceptions for furnished-Access-Device, fraudulent intent, and Bank-initiated), Notice of Loss or Theft, Error (the seven 1005.11(a)(1) categories), Provisional Credit, Business Day, and One-Time Debit Card or ATM Transaction (the 1005.17 trigger).
+- Domain sections capture the rules drift detection most needs to preserve. Section 6 codifies the three liability tiers ($50 / $500 / unlimited) keyed off the 2-business-day and 60-day notice windows from 12 C.F.R. 1005.6, and explicitly bars increasing liability above the cap on a negligence theory. Section 7 codifies the 10-business-day initial window, the 45-calendar-day extended window with mandatory same-day-availability provisional credit and 2-business-day notice of credit, the 90-calendar-day extension for new-account / foreign / non-Bank-POS errors, and the 5-business-day advance notice required before reversing provisional credit. Section 8 codifies the four-step Section 1005.17 opt-in (disclose, opportunity, affirmative consent, written confirmation) and bars bundled / presumed / defaulted opt-in for one-time debit/ATM. Section 12 wires those rules into a continuous monitoring rule-set so drift in any of them is detectable.
+
+### Files Modified / Created
+- data/policies/reg-e.md (new, 2,910 words / 19,289 bytes)
+- specs/phase1/feature_list.json (CORPUS-004 passes -> true)
+
+### Testing
+- Verified all 3 acceptance steps:
+  1. data/policies/reg-e.md exists (`ls` 19,289 bytes)
+  2. Contains Purpose, Scope, Definitions, and domain-specific sections (`awk '/^## /'` lists 14 headings hitting all required + Reg-E-domain topics)
+  3. Marked synthetic in header (`*Synthetic document for demo purposes only ...*` on line 3) and 2,910 words ≈ 5 typeset pages -> within the 2-5 page requirement (initial draft ran to 3,021 words; trimmed sections 4, 9, 10, 11, 12, 13, 14 to land squarely in range while preserving the load-bearing rules in 6/7/8)
+- Regression: `npm test` -> 4 suites / 11 tests passing; `curl /`, `curl /api/health`, `curl /alerts`, `curl /ingestion` -> 200/200/200/200; CORPUS-001/002/003 files unchanged
+- `npx tsc --noEmit` -> zero errors
+
+### Blockers / Issues
+- None. Same SEED-001 caveat applies to this file as to CORPUS-001/002/003: the front matter (lines 1-9) lives BEFORE the first `## ` heading. When SEED-001's split-on-## chunker lands, the pre-first-## block must be persisted as document preamble / fullText prefix, NOT as a PolicyChunk. Fix once in the chunker, not per-document.
+
+### Next Priorities
+- CORPUS-005: data/policies/reg-z.md -- Purpose / Scope / Definitions / domain sections covering Regulation Z (12 C.F.R. Part 1026) Truth in Lending: APR computation and tolerances, finance charge composition, TRID (12 C.F.R. 1026.19) for closed-end residential mortgages with the Loan Estimate / Closing Disclosure timing rules and the 3-business-day pre-consummation delivery, right of rescission for non-purchase-money 1-4 family liens (12 C.F.R. 1026.23), high-cost / HOEPA triggers (1026.32), open-end credit billing-error procedures (1026.13), credit card ability-to-pay (1026.51) and over-limit/penalty fee rules (1026.52), advertising standards (1026.16, 1026.24). Same template as CORPUS-001..004.
+- CORPUS-006..010: vendor management, info security, CIP, overdraft, marketing, in priority order
+- After CORPUS-010 unblocks: SEED-001 (chunk-on-## seed script), then EMBED-001/002 (vector storage)
