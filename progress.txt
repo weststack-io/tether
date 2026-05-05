@@ -325,3 +325,36 @@ Date: 2026-05-04
 - CORPUS-003: data/policies/fair-lending.md -- Purpose / Scope / Definitions / domain sections covering ECOA + Reg B (12 C.F.R. 1002), FHA, HMDA + Reg C, redlining and steering risk, comparative file review, marketing / underwriting / servicing controls, Special Purpose Credit Programs. Same template as CORPUS-001/002 (front matter, ## headings, synthetic header, 2-5 pages).
 - CORPUS-004..010: Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing, in priority order
 - After CORPUS-010 unblocks: SEED-001 (chunk-on-## seed script), then EMBED-001/002 (vector storage)
+
+## Session 10 -- Policy Corpus
+Date: 2026-05-04
+
+### Feature Worked On
+- CORPUS-003: Fair lending dummy policy document with realistic sections covering ECOA + Regulation B, the Fair Housing Act, HMDA + Regulation C, redlining, steering, comparative file review, marketing/underwriting/pricing/servicing controls, and Special Purpose Credit Programs
+- Status: PASSED
+
+### What Was Done
+- Authored data/policies/fair-lending.md (~2,431 words, ~5 typeset pages). Front matter labels it "Synthetic document for demo purposes only", attributes it to "Meridian Trust Bank, N.A." (consistent with CORPUS-001/002), and identifies POL-FL-001 / Fair Lending Officer (Office of Consumer Compliance) as the policy ID and owner.
+- Structure mirrors CORPUS-001/002 exactly: ## 1 Purpose, ## 2 Scope, ## 3 Definitions, then thirteen domain-specific sections (Governance, Marketing and Outreach, Underwriting, Pricing, Steering and Product Placement, Redlining and Geographic Distribution, Comparative File Review and Statistical Monitoring, Servicing/Loss Mitigation/Collections, Special Purpose Credit Programs, HMDA Data Integrity, Compliance Monitoring, Training, Violations and Enforcement). 16 ## headings total, which keeps per-document chunk count comparable to CORPUS-001/002 once SEED-001's split-on-## chunker lands.
+- Definitions narrow the prohibited-basis terms most likely to anchor future drift classifications: Prohibited Basis (full ECOA + FHA list), Disparate Treatment (overt vs. comparative), Disparate Impact (with the "less discriminatory alternative" guard), Redlining, Steering, Comparative File Review, Special Purpose Credit Program (with 12 C.F.R. 1002.8 cite), Reportable HMDA LAR Record.
+- Domain sections cite the regulatory anchors the LLM will need quote-targets for: 12 C.F.R. Part 1002 (Reg B) and Part 1003 (Reg C), 42 U.S.C. 3601 et seq. (FHA), 12 U.S.C. 5531/5536 (UDAAP overlap), 12 C.F.R. 1002.8 (SPCP), and ECOA Section 706(g) for regulator referrals. Pricing section explicitly bars discretion-driven variation on a prohibited basis and requires quarterly basis-point/dollar surveillance -- a load-bearing rule that drift monitoring should preserve.
+
+### Files Modified / Created
+- data/policies/fair-lending.md (new, 154 lines / 2,431 words / 16,932 bytes)
+- specs/phase1/feature_list.json (CORPUS-003 passes -> true)
+
+### Testing
+- Verified all 3 acceptance steps:
+  1. data/policies/fair-lending.md exists (`ls` 16,932 bytes)
+  2. Contains Purpose, Scope, Definitions, and domain-specific sections (`awk '/^## /'` lists 16 headings hitting all required + fair-lending-domain topics)
+  3. Marked synthetic in header (`*Synthetic document for demo purposes only ...*` on line 3) and 2,431 words ≈ 5 typeset pages -> within the 2-5 page requirement
+- Regression: `npm test` -> 4 suites / 11 tests passing; `curl /` and `curl /api/health` -> 200/200; `/alerts` and `/ingestion` -> 200; CORPUS-001/002 files unchanged
+- `npx tsc --noEmit` -> zero errors
+
+### Blockers / Issues
+- None. Same SEED-001 caveat applies to this file as to CORPUS-001/002: the front matter (lines 1-11) lives BEFORE the first `## ` heading. When SEED-001's split-on-## chunker lands, the pre-first-## block must be persisted as document preamble / fullText prefix, NOT as a PolicyChunk. Fix once in the chunker, not per-document.
+
+### Next Priorities
+- CORPUS-004: data/policies/reg-e.md -- Purpose / Scope / Definitions / domain sections covering Regulation E (12 C.F.R. Part 1005) electronic fund transfers: error resolution timing (10 / 45 / 90 days), unauthorized EFT liability tiers ($50 / $500 / unlimited), provisional credit, periodic statements, ATM disclosure, and overdraft opt-in for one-time debit/ATM. Same template as CORPUS-001..003.
+- CORPUS-005..010: Reg Z, vendor management, info security, CIP, overdraft, marketing, in priority order
+- After CORPUS-010 unblocks: SEED-001 (chunk-on-## seed script), then EMBED-001/002 (vector storage)
