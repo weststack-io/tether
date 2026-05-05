@@ -10,7 +10,7 @@ cd "$ROOT_DIR"
 PID_FILE=".dev-server.pid"
 LOG_FILE=".dev-server.log"
 PORT="${PORT:-3000}"
-READY_TIMEOUT="${READY_TIMEOUT:-60}"
+READY_TIMEOUT="${READY_TIMEOUT:-180}"
 
 kill_pid() {
   local pid="$1"
@@ -75,8 +75,11 @@ disown "$NEW_PID" 2>/dev/null || true
 echo "$NEW_PID" > "$PID_FILE"
 echo "Started dev server (pid $NEW_PID), logging to $LOG_FILE"
 
-# 4. Poll until the server answers on $PORT.
+# 4. Wait until Next.js logs its readiness line, then confirm the port answers.
+#    Next 16 + Turbopack compiles routes lazily on first request, so a curl-only
+#    probe can hang well past server-ready while the initial route compiles.
 DEADLINE=$(( $(date +%s) + READY_TIMEOUT ))
+ready_logged=0
 while :; do
   if ! kill -0 "$NEW_PID" 2>/dev/null; then
     echo "ERROR: dev server process exited before becoming ready." >&2
@@ -84,6 +87,11 @@ while :; do
     tail -n 40 "$LOG_FILE" >&2 || true
     rm -f "$PID_FILE"
     exit 1
+  fi
+  if [ "$ready_logged" -eq 0 ] && grep -qE '(Ready in|started server on|Local:[[:space:]]+http)' "$LOG_FILE" 2>/dev/null; then
+    ready_logged=1
+    echo "Dev server ready on http://localhost:${PORT}/ (per log)"
+    exit 0
   fi
   if curl -fsS --connect-timeout 3 --max-time 5 -o /dev/null "http://localhost:${PORT}/" 2>/dev/null \
     || curl -sS --connect-timeout 3 --max-time 5 -o /dev/null -w "%{http_code}" "http://localhost:${PORT}/" 2>/dev/null | grep -qE '^[23][0-9][0-9]$'; then
