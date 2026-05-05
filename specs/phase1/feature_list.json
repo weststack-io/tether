@@ -365,7 +365,7 @@
         "Call with classification='drifted', confidence=0.6 and verify severity='low'",
         "Call with classification='ambiguous', confidence=0.9 and verify severity='low'"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "PIPE-001",
