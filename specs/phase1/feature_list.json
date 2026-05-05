@@ -309,7 +309,7 @@
         "Verify each template accepts the required input variables",
         "Verify templates instruct the model to produce structured JSON output"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "CLASSIFY-001",
