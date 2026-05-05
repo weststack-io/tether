@@ -337,7 +337,7 @@
         "Verify explanation is 2-4 sentences",
         "Verify regulatoryQuote and policyQuote are non-empty strings"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "CITE-001",

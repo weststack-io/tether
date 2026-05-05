@@ -23,7 +23,9 @@ jest.unstable_mockModule("@/lib/ai/llm", () => ({
   callLlm: mockCallLlm,
 }));
 
-const { classifyRelevance, parseLlmJson } = await import("@/lib/ai/classifier");
+const { classifyDrift, classifyRelevance, parseLlmJson } = await import(
+  "@/lib/ai/classifier"
+);
 
 function fakeLlmResponse(text: string): CallLlmResult {
   return {
@@ -221,5 +223,158 @@ describe("classifyRelevance (CLASSIFY-001)", () => {
     await expect(
       classifyRelevance({ title: "t", fullText: "x" }),
     ).rejects.toThrow(/relevantDomains/);
+  });
+});
+
+describe("classifyDrift (CLASSIFY-002)", () => {
+  const validDriftInput = {
+    regulatoryText:
+      "Banks must file a Currency Transaction Report for transactions exceeding $10,000 within 15 days.",
+    policyText:
+      "All cash transactions over $5,000 are reported to the BSA team for review within 30 days.",
+    policySection: "BSA-AML §3.2 CTR Filing Thresholds",
+    policyDocument: "BSA/AML Compliance Policy v4.2",
+  };
+
+  function fakeDriftBody(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      classification: "contradicted",
+      confidence: 0.88,
+      explanation:
+        "The regulation requires CTR filing only for transactions over $10,000 within 15 days. The policy lowers the threshold to $5,000 and extends the timeline to 30 days, both of which conflict with the regulatory requirement. This is a direct contradiction in two material ways.",
+      regulatoryQuote: "transactions exceeding $10,000 within 15 days",
+      policyQuote: "cash transactions over $5,000",
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    mockCallLlm.mockReset();
+  });
+
+  it("returns a fully-typed DriftResult for a contradicting policy chunk", async () => {
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody()));
+
+    const result = await classifyDrift(validDriftInput);
+
+    expect(result.classification).toBe("contradicted");
+    expect(result.confidence).toBeCloseTo(0.88);
+    expect(typeof result.explanation).toBe("string");
+    expect(result.explanation.length).toBeGreaterThan(0);
+    expect(result.regulatoryQuote).toBe("transactions exceeding $10,000 within 15 days");
+    expect(result.policyQuote).toBe("cash transactions over $5,000");
+  });
+
+  it("issues callLlm with purpose=classification and the drift prompt", async () => {
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody()));
+
+    await classifyDrift(validDriftInput);
+
+    expect(mockCallLlm).toHaveBeenCalledTimes(1);
+    const call = mockCallLlm.mock.calls[0][0];
+    expect(call.purpose).toBe("classification");
+    expect(call.maxTokens).toBeGreaterThanOrEqual(2000);
+    expect(call.prompt).toContain(validDriftInput.regulatoryText);
+    expect(call.prompt).toContain(validDriftInput.policyText);
+    expect(call.prompt).toContain(validDriftInput.policySection);
+    expect(call.prompt).toContain(validDriftInput.policyDocument);
+  });
+
+  it("strips markdown fences in the response before parsing", async () => {
+    mockCallLlm.mockResolvedValue(
+      fakeLlmResponse("```json\n" + fakeDriftBody({ classification: "drifted" }) + "\n```"),
+    );
+
+    const result = await classifyDrift(validDriftInput);
+    expect(result.classification).toBe("drifted");
+  });
+
+  it.each(["aligned", "drifted", "contradicted", "ambiguous", "no_material_impact"] as const)(
+    "accepts the valid classification %s",
+    async (classification) => {
+      mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody({ classification })));
+      const result = await classifyDrift(validDriftInput);
+      expect(result.classification).toBe(classification);
+    },
+  );
+
+  it("throws when classification is not in the enum", async () => {
+    mockCallLlm.mockResolvedValue(
+      fakeLlmResponse(fakeDriftBody({ classification: "invalid_label" })),
+    );
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/classification/);
+  });
+
+  it("throws when confidence is out of [0, 1]", async () => {
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody({ confidence: 1.5 })));
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/confidence/);
+
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody({ confidence: -0.1 })));
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/confidence/);
+  });
+
+  it("throws when confidence is not a finite number", async () => {
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody({ confidence: "high" })));
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/confidence/);
+  });
+
+  it("throws when explanation is missing or empty", async () => {
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody({ explanation: "" })));
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/explanation/);
+  });
+
+  it("throws when regulatoryQuote or policyQuote is empty", async () => {
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody({ regulatoryQuote: "" })));
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/regulatoryQuote/);
+
+    mockCallLlm.mockResolvedValue(fakeLlmResponse(fakeDriftBody({ policyQuote: "" })));
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/policyQuote/);
+  });
+
+  it("rejects empty inputs before calling the LLM", async () => {
+    await expect(
+      classifyDrift({ ...validDriftInput, regulatoryText: "" }),
+    ).rejects.toThrow(/regulatoryText/);
+    await expect(
+      classifyDrift({ ...validDriftInput, policyText: "" }),
+    ).rejects.toThrow(/policyText/);
+    await expect(
+      classifyDrift({ ...validDriftInput, policySection: "" }),
+    ).rejects.toThrow(/policySection/);
+    await expect(
+      classifyDrift({ ...validDriftInput, policyDocument: "" }),
+    ).rejects.toThrow(/policyDocument/);
+    expect(mockCallLlm).not.toHaveBeenCalled();
+  });
+
+  it("retries once on a timeout error per app_spec §12", async () => {
+    const timeoutErr = Object.assign(new Error("Request timed out"), {
+      name: "APITimeoutError",
+    });
+    mockCallLlm
+      .mockRejectedValueOnce(timeoutErr)
+      .mockResolvedValueOnce(fakeLlmResponse(fakeDriftBody({ classification: "aligned" })));
+
+    const result = await classifyDrift(validDriftInput);
+    expect(result.classification).toBe("aligned");
+    expect(mockCallLlm).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry on a non-timeout error", async () => {
+    const apiErr = Object.assign(new Error("invalid api key"), { status: 401 });
+    mockCallLlm.mockRejectedValueOnce(apiErr);
+
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/invalid api key/);
+    expect(mockCallLlm).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates the second timeout error if the retry also times out", async () => {
+    const timeoutErr = Object.assign(new Error("timed out again"), {
+      name: "APITimeoutError",
+    });
+    mockCallLlm.mockRejectedValue(timeoutErr);
+
+    await expect(classifyDrift(validDriftInput)).rejects.toThrow(/timed out/);
+    expect(mockCallLlm).toHaveBeenCalledTimes(2);
   });
 });
