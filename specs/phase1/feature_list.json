@@ -42,7 +42,7 @@
         "Verify .env.local is created from .env.example by init.sh",
         "Verify Next.js loads environment variables at runtime"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INFRA-004",

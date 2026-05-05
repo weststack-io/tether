@@ -94,3 +94,40 @@ Date: 2026-05-04
 - INFRA-004: Shared TypeScript types in src/types/index.ts (already exists -- verify exports cover RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, DriftClassification, Severity, AlertStatus, Regulator)
 - LAYOUT-001/LAYOUT-002 for navigation polish
 - API-001 health endpoint verification
+
+## Session 3 -- Infrastructure
+Date: 2026-05-04
+
+### Feature Worked On
+- INFRA-003: Environment configuration with .env.example containing all required variables and .env.local loading correctly
+- Status: PASSED
+
+### What Was Done
+- Confirmed .env.example contains all 9 required keys (DATABASE_URL, ANTHROPIC_API_KEY, EMBEDDING_PROVIDER, OPENAI_API_KEY, VOYAGE_API_KEY, EMBEDDING_MODEL, CLAUDE_MODEL, INGESTION_INTERVAL_HOURS, LOG_LEVEL)
+- Confirmed init.sh has the `cp .env.example .env.local` block guarded by `[ ! -f .env.local ]` (idempotent)
+- Created src/lib/env.ts: reads + validates all required env vars at module load, throws a descriptive error pointing at init.sh when a key is missing. Exports a typed `env` object so call sites get strings (and a parsed number for INGESTION_INTERVAL_HOURS) instead of `string | undefined`
+- Updated src/lib/db.ts to source the libsql URL from `env.DATABASE_URL` instead of a hardcoded literal, so the Prisma adapter actually depends on Next.js's runtime env loading
+- Added jest.setup.ts that loads .env.local via dotenv (registered in jest.config.js `setupFiles`); without it the env loader would throw inside any test that imports @/lib/db
+
+### Files Modified / Created
+- src/lib/env.ts (new)
+- src/lib/db.ts (use env.DATABASE_URL)
+- jest.setup.ts (new)
+- jest.config.js (setupFiles entry)
+- __tests__/unit/env.test.ts (new -- 2 tests: full load + missing-key error)
+- specs/phase1/feature_list.json (INFRA-003 passes -> true)
+
+### Testing
+- `npm test` -> 2 suites, 5 tests passing (3 db + 2 env)
+- `npx tsc --noEmit` -> zero errors
+- `curl http://localhost:3000/api/health` -> 200 with {status:"ok", db:"connected"} -- proves Next.js runtime loaded DATABASE_URL from .env.local through env.ts into the Prisma adapter
+- `curl http://localhost:3000/` -> 200 (regression for INFRA-001)
+
+### Blockers / Issues
+- jest.setup.ts uses `process.cwd()` not `__dirname` because the test runner executes under ESM (extensionsToTreatAsEsm: [".ts"]) where __dirname is undefined. Don't switch it back.
+- env.ts validates eagerly at import time, so any module that pulls it in (including @/lib/db) will fail loud if .env.local is missing. This is intentional but means new tests must be runnable with .env.local present (or jest.setup.ts's dotenv load).
+
+### Next Priorities
+- INFRA-004: Shared TypeScript types in src/types/index.ts (verify exports cover RegulatoryItem, PolicyDocument, PolicyChunk, Alert, AuditEntry, IngestionRun, DriftClassification, Severity, AlertStatus, Regulator)
+- LAYOUT-001 / LAYOUT-002 for navigation shell + active state
+- API-001 health endpoint verification (already returns the right shape; mostly a feature_list update if no regressions)

@@ -3,6 +3,7 @@ const config = {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
   roots: ["<rootDir>/__tests__"],
+  setupFiles: ["<rootDir>/jest.setup.ts"],
   extensionsToTreatAsEsm: [".ts", ".tsx"],
   moduleNameMapper: {
     "^@/(.*)\\.js$": "<rootDir>/src/$1",
