@@ -83,7 +83,7 @@
         "Navigate to /ingestion",
         "Verify Ingestion Log link is now highlighted"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-001",

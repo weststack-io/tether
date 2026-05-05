@@ -196,3 +196,36 @@ Date: 2026-05-04
 - LAYOUT-002: Active navigation state highlight -- already implemented; just verify with Playwright + take dedicated screenshots and flip passes -> true
 - API-001: Health endpoint shape verification (response already matches; add a Jest integration test against the route and flip passes -> true)
 - CORPUS-001 onwards once layout/API basics are confirmed
+
+## Session 6 -- UI Layout
+Date: 2026-05-04
+
+### Feature Worked On
+- LAYOUT-002: Active navigation state highlights the current page in the sidebar
+- Status: PASSED
+
+### What Was Done
+- Verification only -- no code changes. Active-state logic in src/components/layout/Sidebar.tsx already uses usePathname() and applies `bg-primary text-primary-foreground` to the matching link (with an exact-match guard for `/` so Dashboard doesn't stay active on every nested route via startsWith).
+- Marked LAYOUT-002 passes -> true in specs/phase1/feature_list.json (the only allowed mutation per the workflow).
+
+### Files Modified / Created
+- specs/phase1/feature_list.json (LAYOUT-002 passes -> true)
+- specs/phase1/screenshots/LAYOUT-002-dashboard.png
+- specs/phase1/screenshots/LAYOUT-002-alerts.png
+- specs/phase1/screenshots/LAYOUT-002-ingestion.png
+
+### Testing
+- Regression: `npm test` -> 3 suites / 10 tests passing; `curl` on /, /alerts, /ingestion, /api/health all 200
+- Playwright at /: only the Dashboard `<a>` had `bg-primary` in its className; computed background was the dark primary (lab(7.78201 ...)), foreground the primary-foreground; the other two links carried `text-muted-foreground` with transparent background
+- Playwright at /alerts: only the /alerts link had `bg-primary`; / and /ingestion did not
+- Playwright at /ingestion: only the /ingestion link had `bg-primary`; / and /alerts did not
+- Screenshots captured on each route show the highlight following the active link
+- `npx tsc --noEmit` -> zero errors
+
+### Blockers / Issues
+- None. The exact-match for `/` in Sidebar.tsx is load-bearing -- when nested routes like /alerts/[id] land under priority 8+, the existing `pathname.startsWith(item.href)` test will continue to match the parent link correctly without falsely lighting up Dashboard.
+
+### Next Priorities
+- API-001: Health endpoint shape verification -- the route already returns {status, timestamp, db}; needs a Jest integration test asserting the response shape and a 200 status, then flip passes -> true
+- CORPUS-001..010: Author the 10 dummy policy markdown files in data/policies/ (BSA/AML, complaint handling, fair lending, Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing). Each must be 2-5 pages with Purpose/Scope/Definitions + domain sections and a synthetic-data header. These unblock SEED-001 / EMBED-002 / RETRIEVE-001
+- After CORPUS: SEED-001 to chunk + persist them, then EMBED-001/EMBED-002 for vector storage
