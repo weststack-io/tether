@@ -10,8 +10,8 @@
 //
 // Per-chunk classification failures are caught and the chunk is skipped so
 // one bad LLM round-trip does not abort the entire run. Citation failures
-// suppress the alert (PIPE-002 will add the itemsSuppressed counter on top
-// of this; the suppression decision itself lives here).
+// suppress the alert AND increment IngestionRun.itemsSuppressed (PIPE-002),
+// so callers can report how many candidates were rejected by quote check.
 //
 // Returns a summary object so callers (API routes, tests) can assert what
 // happened without re-querying the DB.
@@ -144,6 +144,10 @@ async function processCandidate(
   });
   if (!verified) {
     handlers.onCitationFailure();
+    await prisma.ingestionRun.update({
+      where: { id: regItem.ingestionRunId },
+      data: { itemsSuppressed: { increment: 1 } },
+    });
     return null;
   }
 

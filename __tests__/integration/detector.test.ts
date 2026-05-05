@@ -326,4 +326,77 @@ describe("runDriftDetection against seeded database (PIPE-001)", () => {
     });
     createdLogIds.push(...newLogs.map((l) => l.id));
   });
+
+  it("suppresses alerts when citation verification fails and increments itemsSuppressed (PIPE-002)", async () => {
+    // Pick the same shape of seeded chunk as the happy-path test so retrieval
+    // returns at least one candidate (ensuring the citation-verification gate
+    // actually runs). The drift mock then returns FABRICATED quotes -- strings
+    // that do NOT appear in either the regulatory text or the policy chunk.
+    const allChunks = await prisma.policyChunk.findMany({
+      where: { embedding: { not: null } },
+    });
+    const sampleChunk = allChunks
+      .filter((c) => c.content.length < 3500)
+      .sort((a, b) => a.content.length - b.content.length)[0];
+    expect(sampleChunk).toBeDefined();
+    if (!sampleChunk) throw new Error("unreachable");
+
+    // Set the module-scoped mock state to fabricated quotes. The mock uses
+    // these for every drift call, so every retrieved candidate will fail
+    // verifyCitations.
+    driftRegulatoryQuote = "this exact phrase never appears in any seeded chunk xyzzy 4242";
+    driftPolicyQuote = "another fabricated phrase plugh 9999 not in corpus";
+
+    const run = await prisma.ingestionRun.create({
+      data: { trigger: "manual", status: "running" },
+    });
+    createdRunIds.push(run.id);
+
+    const item = await prisma.regulatoryItem.create({
+      data: {
+        sourceUrl: `https://test.example.com/pipe-002/${run.id}`,
+        regulator: "FINRA",
+        publicationDate: new Date(),
+        documentType: "final_rule",
+        title: sampleChunk.sectionHeading,
+        fullText: sampleChunk.content,
+        ingestionRunId: run.id,
+      },
+    });
+    createdItemIds.push(item.id);
+
+    const alertCountBefore = await prisma.alert.count();
+    const llmCountBefore = await prisma.llmCallLog.count();
+
+    const result = await runDriftDetection(item.id);
+
+    expect(result.regulatoryItemId).toBe(item.id);
+    expect(result.isRelevant).toBe(true);
+    expect(result.candidatesEvaluated).toBeGreaterThan(0);
+    expect(result.alertsCreated).toEqual([]);
+    expect(result.citationFailures).toBeGreaterThan(0);
+    // Every evaluated candidate should fail the citation gate (the mock
+    // always returns the fabricated quotes) -- this codifies the "ALL
+    // candidates suppressed" branch.
+    expect(result.citationFailures).toBe(result.candidatesEvaluated);
+
+    const alertCountAfter = await prisma.alert.count();
+    expect(alertCountAfter).toBe(alertCountBefore);
+
+    const updatedRun = await prisma.ingestionRun.findUnique({
+      where: { id: run.id },
+    });
+    expect(updatedRun).not.toBeNull();
+    if (!updatedRun) throw new Error("unreachable");
+    expect(updatedRun.itemsSuppressed).toBe(result.citationFailures);
+    expect(updatedRun.itemsFlagged).toBe(0);
+
+    // Track LLM logs for cleanup.
+    const llmCountAfter = await prisma.llmCallLog.count();
+    const newLogs = await prisma.llmCallLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: llmCountAfter - llmCountBefore,
+    });
+    createdLogIds.push(...newLogs.map((l) => l.id));
+  });
 });

@@ -393,7 +393,7 @@
         "Verify no alert is created for the fabricated citation",
         "Verify the ingestion run's itemsSuppressed count was incremented"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INGEST-001",
