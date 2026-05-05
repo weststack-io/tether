@@ -652,3 +652,39 @@ Date: 2026-05-04
 - EMBED-001 (priority 19): src/lib/ai/embeddings.ts that exports `generateEmbedding(text: string): Promise<number[]>` reading EMBEDDING_PROVIDER (openai|voyage), EMBEDDING_MODEL, and the corresponding API key from env. Acceptance steps require the file/export, a sample call returning a numeric array, and provider read from env. Consider designing the function so that EMBED-002 (which has to embed all 154 PolicyChunks) can batch through it efficiently rather than calling once per chunk.
 - EMBED-002 (priority 20): generate embeddings for all 154 PolicyChunks during (or after) seed and store in `PolicyChunk.embedding` as JSON-stringified float arrays. Easiest path: extend prisma/seed.ts to call generateEmbedding per chunk (or per batch) before INSERT. Acceptance requires seed to populate embedding on every chunk.
 - VECTORS-001 (priority 21) and RETRIEVE-001 (priority 23) follow once embeddings are present.
+
+## Session 19 -- AI Embeddings
+Date: 2026-05-04
+
+### Feature Worked On
+- EMBED-001: `generateEmbedding(text: string): Promise<number[]>` in src/lib/ai/embeddings.ts that reads EMBEDDING_PROVIDER, EMBEDDING_MODEL, and the matching API key (OPENAI_API_KEY or VOYAGE_API_KEY) from process.env and POSTs to the configured embedding API
+- Status: PASSED
+
+### What Was Done
+- Replaced the stub `generateEmbedding` with a real implementation that branches on `process.env.EMBEDDING_PROVIDER` (must be exactly "openai" or "voyage" -- any other value throws), reads `EMBEDDING_MODEL` and the provider-appropriate API key from `process.env`, and POSTs `{ input, model }` with `Authorization: Bearer <key>` to either `https://api.openai.com/v1/embeddings` or `https://api.voyageai.com/v1/embeddings`. Both endpoints share the same OpenAI-compatible response shape (`{ data: [{ embedding: number[] }] }`), so a single `callEmbeddingApi` helper handles both. Non-OK responses surface the status / statusText / body so seed-time and runtime failures are debuggable. Empty/non-string input throws synchronously rather than wasting an API round-trip.
+- Read env values lazily inside `generateEmbedding` (not via `src/lib/env.ts`'s module-level eager read) so that callers that haven't populated every key in `REQUIRED_ENV_KEYS` (e.g. unit tests, batch scripts) can still use the embeddings module. The env.ts loader is still the canonical source of truth for code paths that need every key -- this module just reads the three keys it actually needs.
+- Authored `__tests__/unit/embeddings.test.ts` with 5 tests covering: OpenAI happy-path returns numeric array + URL/headers/body shape verification, Voyage happy-path (correct endpoint + auth + model passthrough), unset/invalid `EMBEDDING_PROVIDER` throws, missing `OPENAI_API_KEY` throws, and non-OK API response surfaces the status. Tests stub `globalThis.fetch` per case so no real network calls happen.
+- Implementation note for future EMBED-002: `generateEmbedding` accepts a single string. OpenAI and Voyage both natively support array `input` for batching (and Voyage rate limits favor batching), so EMBED-002 will likely add a sibling `generateEmbeddings(texts: string[]): Promise<number[][]>` that posts the array to the same endpoint. Kept this session focused on the single-text contract that EMBED-001 specifies.
+
+### Files Modified / Created
+- src/lib/ai/embeddings.ts (replaced stub with real implementation, 86 lines)
+- __tests__/unit/embeddings.test.ts (new, 5 tests)
+- specs/phase1/feature_list.json (EMBED-001 passes -> true)
+
+### Testing
+- Verified all 4 acceptance steps for EMBED-001:
+  1. `src/lib/ai/embeddings.ts` exists and exports `generateEmbedding` (`grep export` confirms)
+  2. Live sample call: with EMBEDDING_PROVIDER=openai + a stubbed fetch returning `{ data: [{ embedding: [0.1, 0.2, 0.3, 0.4, 0.5] }] }`, `generateEmbedding("AML KYC sample text")` resolved to `[0.1, 0.2, 0.3, 0.4, 0.5]`. Stub also captured the outgoing request: URL `https://api.openai.com/v1/embeddings`, header `Authorization: Bearer sk-test-fake`, body `{"input":"AML KYC sample text","model":"text-embedding-3-small"}`.
+  3. Result is `Array.isArray === true`, length 5, `every(n => typeof n === "number") === true` (numeric float vector).
+  4. Provider read from env: setting `EMBEDDING_PROVIDER=openai` routed to the OpenAI endpoint with `OPENAI_API_KEY` as the bearer, and the unit test confirms `EMBEDDING_PROVIDER=voyage` routes to `https://api.voyageai.com/v1/embeddings` with `VOYAGE_API_KEY`.
+- Unit test results: `npm test` -> 5 suites / 16 tests passing (was 4 / 11; +1 suite / +5 tests for embeddings).
+- Regression: `npx tsc --noEmit` -> zero errors; `curl /` -> 200; `curl /api/health` -> 200; `curl /alerts` -> 200; `curl /ingestion` -> 200; existing CORPUS-001..010 + SEED-001 unchanged; 4 prior test suites (env, types, db, health) all still pass.
+
+### Blockers / Issues
+- None. The placeholder `OPENAI_API_KEY=your-openai-api-key` in `.env.local` will cause a real call to return 401 -- that is expected and the implementation surfaces the API error cleanly. EMBED-002 will need a real key (or a fallback / fixture mode) to populate all 154 PolicyChunk embeddings; if a real key is not available at the time EMBED-002 runs, that feature will need to either short-circuit (skip embedding generation when the key is the placeholder string) or use a deterministic local fallback (e.g. hashing-based dummy vectors). Decision deferred to EMBED-002 itself.
+- Note for EMBED-002: when extending the seed, watch out for `prisma.config.ts`'s `migrations.seed` command -- it currently uses `node --experimental-strip-types`, which works for ESM-syntax TS but does not transpile decorators or other non-strippable syntax. The current seed.ts and the new embeddings.ts are both strip-compatible, so no change needed yet.
+
+### Next Priorities
+- EMBED-002 (priority 20): generate embeddings for all 154 PolicyChunks during seed and store as JSON-stringified float arrays in `PolicyChunk.embedding`. Cleanest path: add `generateEmbeddings(texts: string[]): Promise<number[][]>` (batch) to embeddings.ts, then extend `prisma/seed.ts` to collect all chunk contents per document, batch-call the embedding API, and bind the resulting JSON string into the existing INSERT statement. Acceptance requires every chunk to have a non-null, JSON-array-of-numbers embedding after seed. Watch the placeholder-API-key blocker noted above.
+- VECTORS-001 (priority 21): `cosineSimilarity(a: number[], b: number[]): number` in src/lib/vectors.ts (currently a stub). Pure function -- straightforward unit tests against identical, orthogonal, and opposite vectors.
+- RETRIEVE-001 (priority 22): `retrieveCandidates` in src/lib/drift/retriever.ts that loads all PolicyChunk embeddings, computes cosine similarity against the query embedding, applies threshold 0.3, and returns top 15. Depends on VECTORS-001 + EMBED-002.
