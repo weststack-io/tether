@@ -45,6 +45,11 @@ dev.db-journal
 
 # mcp config (local tooling)
 .mcp.json
+.playwright-mcp/
+
+# loop driver artifacts
+.dev-server.log
+.dev-server.pid
 
 # typescript
 *.tsbuildinfo

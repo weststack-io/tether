@@ -25,3 +25,36 @@ Date: 2026-05-04
 - INFRA-004: Shared types
 - Then: LAYOUT-001 and LAYOUT-002 for navigation
 - Then: CORPUS-001 through CORPUS-010 for policy documents
+
+## Session 1 -- Infrastructure
+Date: 2026-05-04
+
+### Feature Worked On
+- INFRA-001: Next.js project scaffolded with TypeScript, Tailwind CSS, and shadcn/ui initialized
+- Status: PASSED
+
+### What Was Done
+- Created tailwind.config.ts (Tailwind v4 supports it via @config; previously absent because v4 defaults to CSS-only theme config)
+- Added @config "../../tailwind.config.ts" import to src/app/globals.css so the file is actually loaded by the Tailwind v4 PostCSS plugin
+- Cleared a stale .next/dev/types/validator.ts that contained a corrupt fragment from a prior aborted Turbopack generation (this was making 'npx tsc --noEmit' fail with TS1128)
+
+### Files Modified / Created
+- tailwind.config.ts (new)
+- src/app/globals.css (added @config import)
+
+### Testing
+- Verified package.json declares next, react, typescript, tailwindcss
+- Ran 'npx tsc --noEmit' -> zero errors
+- curl http://localhost:3000/ -> 200
+- Playwright navigated to / and rendered correctly: "Tether — Regulatory Drift Detector" header, sidebar links (Dashboard / Alerts / Ingestion Log), Tailwind styling applied. Screenshot saved to specs/phase1/screenshots/INFRA-001.png
+- Confirmed tailwind.config.ts exists with content glob and exported Config
+- Confirmed tsconfig.json has "strict": true
+
+### Blockers / Issues
+- The corrupt .next/dev/types/validator.ts blocking tsc was a one-time leftover; deleting .next/dev/types/ and warming the dev server regenerated it cleanly. Watch for recurrence on future sessions.
+
+### Next Priorities
+- INFRA-002: Prisma schema verification (verify all 7 models, prisma generate, db push, src/lib/db.ts singleton)
+- INFRA-003: Environment configuration (.env.example completeness)
+- INFRA-004: Shared TypeScript types in src/types/index.ts
+- LAYOUT-001/LAYOUT-002 for navigation polish
