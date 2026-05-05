@@ -1,0 +1,18 @@
+[
+  {
+    "sourceUrl": "https://www.occ.gov/news-issuances/bulletins/2025/bulletin-2025-3.html",
+    "regulator": "OCC",
+    "publicationDate": "2025-02-12T14:00:00Z",
+    "documentType": "bulletin",
+    "title": "OCC Bulletin 2025-3: Bank Secrecy Act / Anti-Money Laundering Examination Priorities",
+    "fullText": "The Office of the Comptroller of the Currency today issued a bulletin reaffirming Bank Secrecy Act and anti-money laundering supervisory priorities for national banks, federal savings associations, and federal branches and agencies of foreign banks. The bulletin emphasizes that examiners will focus on the adequacy of customer due diligence and beneficial ownership identification programs, the timeliness and quality of suspicious activity report filings, the integrity of currency transaction reporting, and the effectiveness of the institution's risk-based BSA compliance program. Banks are reminded that BSA officers must have sufficient authority, resources, and independence to administer the program, and that the board of directors must receive regular reporting on BSA/AML risk and program effectiveness. The bulletin also addresses heightened expectations for monitoring of higher-risk customer relationships, including money services businesses, private banking customers, and politically exposed persons. Institutions should review their independent testing scope and frequency to ensure ongoing alignment with the institution's risk profile and recent regulatory guidance from FinCEN."
+  },
+  {
+    "sourceUrl": "https://www.occ.gov/news-issuances/bulletins/2025/bulletin-2025-7.html",
+    "regulator": "OCC",
+    "publicationDate": "2025-03-19T14:00:00Z",
+    "documentType": "bulletin",
+    "title": "OCC Bulletin 2025-7: Third-Party Risk Management Expectations for Cloud Service Providers",
+    "fullText": "The Office of the Comptroller of the Currency today issued a bulletin clarifying supervisory expectations for third-party risk management when banks rely on cloud service providers for material business processes. Building on the interagency Third-Party Risk Management Guidance issued in June 2023, the bulletin reminds institutions that the use of cloud services does not transfer responsibility for safety and soundness, consumer protection, or information security to the service provider. Banks must perform commensurate risk-based due diligence covering financial condition, business experience, qualifications and references, information security and resilience controls, incident response capabilities, and the provider's reliance on subcontractors. Contracts should clearly define service-level expectations, audit rights, data ownership and portability, breach notification timeframes, and termination rights. The bulletin highlights specific concerns around concentration risk when multiple critical workloads depend on a single cloud region or provider, and around the bank's ability to monitor configuration changes and access by service-provider personnel. Institutions should ensure that vendor management programs, business continuity testing, and information security oversight collectively address these expectations."
+  }
+]
