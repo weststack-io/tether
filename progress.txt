@@ -292,3 +292,36 @@ Date: 2026-05-04
 - CORPUS-002: data/policies/complaint-handling.md -- mirror the same structure (Purpose / Scope / Definitions / domain sections / Compliance Monitoring / Violations) with consumer complaint handling (Reg DD interplay, CFPB consumer response, complaint logging, root cause review)
 - CORPUS-003..010: fair lending, Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing, in priority order
 - After CORPUS-010 unblocks: SEED-001 (chunk-on-## seed script), then EMBED-001/002 (vector storage)
+
+## Session 9 -- Policy Corpus
+Date: 2026-05-04
+
+### Feature Worked On
+- CORPUS-002: Consumer complaint handling dummy policy document with realistic sections covering intake, investigation, root cause, restitution, and program reporting
+- Status: PASSED
+
+### What Was Done
+- Authored data/policies/complaint-handling.md (~2,027 words, ~4-5 typeset pages). Front matter labels it "Synthetic document for demo purposes only", attributes it to the same fictional bank ("Meridian Trust Bank, N.A.") used in CORPUS-001, and identifies POL-COMP-001 / Director of Consumer Compliance as the policy ID and owner.
+- Structure mirrors CORPUS-001's template exactly: ## 1 Purpose, ## 2 Scope, ## 3 Definitions, then nine domain-specific sections (Channels of Receipt, Intake and Acknowledgment, Investigation and Resolution, Root Cause Analysis, Restitution, Recordkeeping, Reporting, Compliance Monitoring, Violations and Enforcement). 12 ## headings total, which keeps the per-document chunk count comparable to CORPUS-001 once SEED-001's split-on-## chunker lands.
+- Definitions narrow the domain terms most likely to anchor future drift classifications: Complaint vs. Inquiry boundary, Regulatory Complaint, Executive Complaint, UDAAP (with explicit 12 U.S.C. 5531/5536 cite), Root Cause (with the load-bearing rule that root cause is not the proximate employee action absent a control failure), Acknowledgment, Substantive Response.
+- Domain sections cite the regulatory anchors the LLM will need quote-targets for: CFPB Consumer Response timelines (15-day acknowledgment / 60-day closure), Reg Z billing-error and Reg E EFT-error timeframes, FCRA notice requirements on credit-reporting disputes, and 12 U.S.C. 5531/5536 for UDAAP. Restitution section explicitly bars consumer releases as a precondition of restitution that the Bank concludes is owed -- a common UDAAP red-flag pattern that drift monitoring should preserve.
+
+### Files Modified / Created
+- data/policies/complaint-handling.md (new, 2,027 words)
+- specs/phase1/feature_list.json (CORPUS-002 passes -> true)
+
+### Testing
+- Verified all 3 acceptance steps:
+  1. data/policies/complaint-handling.md exists (`ls` 13,939 bytes)
+  2. Contains Purpose, Scope, Definitions, and domain-specific sections (`awk '/^## /'` lists 12 headings hitting all required + complaint-domain topics)
+  3. Marked synthetic in header (`*Synthetic document for demo purposes only ...*` on line 3) and 2,027 words ≈ 4-5 typeset pages -> within the 2-5 page requirement
+- Regression: `npm test` -> 4 suites / 11 tests passing; `curl /` and `curl /api/health` -> 200/200; CORPUS-001 file unchanged at 1,927 words
+- `npx tsc --noEmit` -> zero errors
+
+### Blockers / Issues
+- None. Same SEED-001 caveat noted in Session 8 still applies to this file: the front matter (lines 1-11) lives BEFORE the first `## ` heading. When SEED-001's split-on-## chunker lands, the pre-first-## block must be persisted as document preamble / fullText prefix, NOT as a PolicyChunk -- otherwise both CORPUS-001 and CORPUS-002 will produce a meaningless metadata-only chunk. Fix this once in the chunker, not per-document.
+
+### Next Priorities
+- CORPUS-003: data/policies/fair-lending.md -- Purpose / Scope / Definitions / domain sections covering ECOA + Reg B (12 C.F.R. 1002), FHA, HMDA + Reg C, redlining and steering risk, comparative file review, marketing / underwriting / servicing controls, Special Purpose Credit Programs. Same template as CORPUS-001/002 (front matter, ## headings, synthetic header, 2-5 pages).
+- CORPUS-004..010: Reg E, Reg Z, vendor management, info security, CIP, overdraft, marketing, in priority order
+- After CORPUS-010 unblocks: SEED-001 (chunk-on-## seed script), then EMBED-001/002 (vector storage)
