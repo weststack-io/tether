@@ -5,7 +5,7 @@
 type EmbeddingProvider = "openai" | "voyage";
 
 interface EmbeddingResponse {
-  data: Array<{ embedding: number[] }>;
+  data: Array<{ embedding: number[]; index?: number }>;
 }
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/embeddings";
@@ -59,6 +59,14 @@ async function callEmbeddingApi(
   return json;
 }
 
+function endpointFor(provider: EmbeddingProvider): string {
+  return provider === "openai" ? OPENAI_ENDPOINT : VOYAGE_ENDPOINT;
+}
+
+function apiKeyFor(provider: EmbeddingProvider): string {
+  return readRequired(provider === "openai" ? "OPENAI_API_KEY" : "VOYAGE_API_KEY");
+}
+
 export async function generateEmbedding(text: string): Promise<number[]> {
   if (typeof text !== "string" || text.length === 0) {
     throw new Error("generateEmbedding requires a non-empty text string");
@@ -66,20 +74,42 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   const provider = readProvider();
   const model = readRequired("EMBEDDING_MODEL");
-
-  if (provider === "openai") {
-    const apiKey = readRequired("OPENAI_API_KEY");
-    const json = await callEmbeddingApi(OPENAI_ENDPOINT, apiKey, {
-      input: text,
-      model,
-    });
-    return json.data[0].embedding;
-  }
-
-  const apiKey = readRequired("VOYAGE_API_KEY");
-  const json = await callEmbeddingApi(VOYAGE_ENDPOINT, apiKey, {
+  const json = await callEmbeddingApi(endpointFor(provider), apiKeyFor(provider), {
     input: text,
     model,
   });
   return json.data[0].embedding;
+}
+
+export async function generateEmbeddings(
+  texts: string[],
+): Promise<number[][]> {
+  if (!Array.isArray(texts) || texts.length === 0) {
+    throw new Error("generateEmbeddings requires a non-empty array of strings");
+  }
+  for (const t of texts) {
+    if (typeof t !== "string" || t.length === 0) {
+      throw new Error("generateEmbeddings requires non-empty text strings");
+    }
+  }
+
+  const provider = readProvider();
+  const model = readRequired("EMBEDDING_MODEL");
+  const json = await callEmbeddingApi(endpointFor(provider), apiKeyFor(provider), {
+    input: texts,
+    model,
+  });
+
+  if (json.data.length !== texts.length) {
+    throw new Error(
+      `Embedding API returned ${json.data.length} vectors for ${texts.length} inputs`,
+    );
+  }
+
+  // OpenAI and Voyage both return data with an `index` field that maps each
+  // vector back to its input position. Sort by index to be order-safe.
+  const ordered = json.data
+    .slice()
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+  return ordered.map((d) => d.embedding);
 }

@@ -256,7 +256,7 @@
         "Verify every chunk has a non-null embedding field",
         "Verify embeddings are valid JSON arrays of numbers"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "VECTORS-001",

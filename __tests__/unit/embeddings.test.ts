@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, jest } from "@jest/globals";
 
-import { generateEmbedding } from "@/lib/ai/embeddings";
+import { generateEmbedding, generateEmbeddings } from "@/lib/ai/embeddings";
 
 type FetchInit = { method?: string; headers?: Record<string, string>; body?: string };
 type FetchResponse = {
@@ -97,6 +97,44 @@ describe("generateEmbedding (EMBED-001)", () => {
     delete process.env.OPENAI_API_KEY;
 
     await expect(generateEmbedding("x")).rejects.toThrow(/OPENAI_API_KEY/);
+  });
+
+  it("batches multiple inputs through generateEmbeddings and orders by index", async () => {
+    process.env.EMBEDDING_PROVIDER = "openai";
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    process.env.OPENAI_API_KEY = "sk-test-batch";
+
+    fetchSpy.mockResolvedValue(
+      makeJsonResponse({
+        data: [
+          { embedding: [0.3, 0.4], index: 1 },
+          { embedding: [0.1, 0.2], index: 0 },
+        ],
+      }),
+    );
+
+    const result = await generateEmbeddings(["alpha", "beta"]);
+
+    expect(result).toEqual([
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, FetchInit];
+    expect(url).toBe("https://api.openai.com/v1/embeddings");
+    const body = JSON.parse(init.body ?? "{}") as { input: string[]; model: string };
+    expect(body.input).toEqual(["alpha", "beta"]);
+    expect(body.model).toBe("text-embedding-3-small");
+  });
+
+  it("generateEmbeddings rejects empty arrays and empty strings", async () => {
+    process.env.EMBEDDING_PROVIDER = "openai";
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    process.env.OPENAI_API_KEY = "sk-test";
+
+    await expect(generateEmbeddings([])).rejects.toThrow(/non-empty array/);
+    await expect(generateEmbeddings(["ok", ""])).rejects.toThrow(/non-empty/);
   });
 
   it("throws when the API responds with a non-OK status", async () => {
