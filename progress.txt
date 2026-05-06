@@ -3790,3 +3790,41 @@ Date: 2026-05-06
 - Investigate the intermittent dashboard recent-runs ordering flake noted above; root cause is likely seed-demo `startedAt` collisions with test-seeded runs in dash001/dash005.
 - src/lib/alerts/actions.ts shared-action helper (priority 0 -- structural prerequisite, NOT a feature in feature_list.json): consolidate accept+dismiss+escalate+snooze branches still duplicated between src/app/alerts/[id]/actions.ts + src/app/api/alerts/[id]/action/route.ts.
 - src/lib/alerts/labels.ts + src/lib/ingestion/labels.ts shared-labels refactor (priority 0 -- structural prerequisite, NOT a feature in feature_list.json): consolidate the alert-side and ingestion-side label maps.
+
+## Session 79 -- UI
+Date: 2026-05-06
+
+### Feature Worked On
+- UI-003: API errors display a toast notification with the error message instead of crashing the UI
+- Status: PASSED
+
+### What Was Done
+- Added [src/app/error.tsx](/mnt/c/repos/weststack/demos/ralph/src/app/error.tsx) route-level error boundary. Renders a friendly fallback card (testid `route-error`, title `route-error-title`, message `route-error-message`, retry button `route-error-retry`) with a `Try again` reset action. On mount fires `toast.error(message, { id: digest, description: 'Reference: <digest>' })` so a server-component throw surfaces both the toast and a non-blank page in the existing layout shell. Falls back to "Something went wrong while loading this page." when the thrown Error has no message (production server-component digest path).
+- Verified the existing [TriggerIngestionButton.tsx](/mnt/c/repos/weststack/demos/ralph/src/components/dashboard/TriggerIngestionButton.tsx) already wraps `fetch('/api/ingestion/trigger')` in try/catch and calls `toast.error(message, { id: startToastId })` on non-OK responses; that's the second UI-003 surface (client-side fetch failure -> toast). No changes needed there.
+- Added [__tests__/unit/error-boundary.test.tsx](/mnt/c/repos/weststack/demos/ralph/__tests__/unit/error-boundary.test.tsx) (2 tests) asserting (1) the SSR markup contract — testids, title, message text, retry button, `data-error-digest` attribute, (2) the empty-message fallback rendering the generic copy.
+- Added [__tests__/integration/ui-error.test.ts](/mnt/c/repos/weststack/demos/ralph/__tests__/integration/ui-error.test.ts) (2 tests) asserting (1) `/api/ingestion/trigger` returns a JSON error payload suitable for the toast (the route's existing 400-on-invalid-JSON path) and does not write a row, (2) the live dashboard at `/` streams its severity-cards and trigger-button anchors so a future toast lands on a fully-rendered page.
+- Captured [specs/phase1/screenshots/UI-003-trigger-toast.png](/mnt/c/repos/weststack/demos/ralph/specs/phase1/screenshots/UI-003-trigger-toast.png) — Playwright navigated to `/`, monkey-patched `window.fetch` so `/api/ingestion/trigger` returns 500 with `{"error":"Simulated regulator endpoint outage (UI-003)"}`, clicked the trigger button, then froze Sonner's auto-dismiss timer (any `setTimeout >= 1500ms` no-ops) so the screenshot caught the rendered toast at full opacity. Toast text reads `Trigger failed: HTTP 500 {"error":"Simulated regulator endpoint outage (UI-003)"}`; the dashboard severity cards / regulator cards / domain cards all remain rendered behind it.
+- Flipped `UI-003` to `passes: true` in [feature_list.json](/mnt/c/repos/weststack/demos/ralph/specs/phase1/feature_list.json). With this change every feature in the list is now `passes: true`.
+
+### Testing
+- Regression checks before implementation:
+  - `curl http://localhost:3000/` -> 200, `curl http://localhost:3000/alerts` -> 200, `curl http://localhost:3000/ingestion` -> 200, `curl 'http://localhost:3000/alerts?dateFrom=1900-01-01&dateTo=1900-01-02'` -> 200 with `alerts-empty` markup (UI-002 still works).
+- Feature verification:
+  - `npm test -- --runTestsByPath __tests__/unit/error-boundary.test.tsx __tests__/integration/ui-error.test.ts` -> 4/4 passed.
+  - Live Playwright capture (top-right toast over the dashboard) demonstrating the four UI-003 verification steps end-to-end: simulate API error (fetch monkey-patched), navigate to a page that calls the endpoint (`/`), toast notification appears with the error message, page does not crash (severity-cards / regulator-cards / domain-cards / trigger-ingestion-button all still rendered).
+- Clean-session checks:
+  - `npm test` -> 74 suites / 444 tests passed (single full run, ~109s, was 72/440; +2 suites, +4 tests).
+  - `npx tsc --noEmit` -> passed with zero output.
+
+### Blockers / Issues
+- The Sonner toast auto-dismisses after ~4s (default duration) and the Playwright screenshot tool runs in a separate async context from the in-page `browser_evaluate` that fires the click. Initial screenshot attempts captured the dashboard *after* the toast had already animated out. Workaround used here: in a single `browser_evaluate`, monkey-patch `window.setTimeout` to no-op any `delay >= 1500ms` BEFORE clicking the button, then take the screenshot. The toast's mount/animation timers fire (delays < 1500ms) but its dismiss timer (4000ms) is suppressed, so the toast stays on screen until navigation. This is a screenshot-capture artifact only; in real usage the toast dismisses normally.
+- Sonner's toast list element renders with `position: fixed` and `z-index: 999999999` (sane default for an overlay). The individual `<li data-sonner-toast>` inside has `z-index: 1` relative to the list — that's fine because the list itself sits above the sticky header (`z-index: 10`) thanks to the high outer z-index. No layering changes were needed.
+- The repository's `error.tsx` lives at the app root so it covers every route segment (`/`, `/alerts`, `/alerts/[id]`, `/ingestion`). I did not add per-segment `error.tsx` files; the root boundary is sufficient because Next.js bubbles unhandled throws up to the nearest enclosing boundary, and the SSR test verifies the markup contract at the root level. If a future feature wants segment-specific copy (e.g. "Could not load this alert" vs "Could not load alerts list") that would be the polish.
+- The intermittent `dashboard-page-dash00*` ordering flake noted in Session 78 did NOT recur in this session's `npm test` run. Still leaving the note in Next Priorities so the seed-ordering investigation is tracked.
+
+### Next Priorities
+- Phase 1 feature list is now complete: every entry in `specs/phase1/feature_list.json` is `passes: true`. Future sessions either tighten existing features or move to Phase 2.
+- Investigate the intermittent dashboard recent-runs ordering flake noted in Session 78; root cause is likely seed-demo `startedAt` collisions with test-seeded runs in dash001/dash005. Reliability cleanup, not a feature.
+- src/lib/alerts/actions.ts shared-action helper (priority 0 -- structural prerequisite, NOT a feature in feature_list.json): consolidate accept+dismiss+escalate+snooze branches still duplicated between src/app/alerts/[id]/actions.ts + src/app/api/alerts/[id]/action/route.ts.
+- src/lib/alerts/labels.ts + src/lib/ingestion/labels.ts shared-labels refactor (priority 0 -- structural prerequisite, NOT a feature in feature_list.json): consolidate the alert-side and ingestion-side label maps.
+- Optional UI-003 polish: per-segment `error.tsx` files with copy tailored to the failing surface (alert detail vs ingestion log). The root boundary added this session is sufficient for the feature contract.
