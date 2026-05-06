@@ -43,6 +43,76 @@ function parseDateBound(raw: string | null, isUpper: boolean): DateBound | null 
   return { mode: isUpper ? "lte" : "gte", value: parsed };
 }
 
+const SORT_FIELDS = [
+  "severity",
+  "date",
+  "regulator",
+  "domain",
+  "status",
+] as const;
+type SortField = (typeof SORT_FIELDS)[number];
+type SortOrder = "asc" | "desc";
+
+function parseSortBy(raw: string | null): SortField {
+  if (raw && (SORT_FIELDS as readonly string[]).includes(raw)) {
+    return raw as SortField;
+  }
+  return "date";
+}
+
+function parseSortOrder(raw: string | null): SortOrder {
+  return raw === "asc" ? "asc" : "desc";
+}
+
+// Severity ranks by impact, not lexicographic order: high < medium < low.
+// `sortOrder=desc` means "highest severity first" -> rank ascending.
+const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+// Translates sortBy+sortOrder into a Prisma orderBy clause for fields that map
+// cleanly to a column or relation chain. Returns null for `severity`, which
+// requires a custom rank order that Prisma's typed orderBy cannot express.
+function buildPrismaOrderBy(
+  sortBy: SortField,
+  sortOrder: SortOrder,
+): Record<string, unknown> | null {
+  switch (sortBy) {
+    case "date":
+      return { createdAt: sortOrder };
+    case "status":
+      return { status: sortOrder };
+    case "regulator":
+      return { regulatoryItem: { regulator: sortOrder } };
+    case "domain":
+      return { policyChunk: { policyDocument: { domain: sortOrder } } };
+    case "severity":
+      return null;
+  }
+}
+
+const ALERT_INCLUDE = {
+  regulatoryItem: {
+    select: {
+      id: true,
+      title: true,
+      regulator: true,
+      sourceUrl: true,
+      publicationDate: true,
+      documentType: true,
+    },
+  },
+  policyChunk: {
+    select: {
+      id: true,
+      sectionHeading: true,
+      content: true,
+      chunkIndex: true,
+      policyDocument: {
+        select: { id: true, title: true, domain: true },
+      },
+    },
+  },
+} as const;
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -52,6 +122,8 @@ export async function GET(request: Request) {
       DEFAULT_PAGE_SIZE,
       MAX_PAGE_SIZE,
     );
+    const sortBy = parseSortBy(url.searchParams.get("sortBy"));
+    const sortOrder = parseSortOrder(url.searchParams.get("sortOrder"));
 
     const regulators = parseCsvList(url.searchParams.get("regulator"));
     const severities = parseCsvList(url.searchParams.get("severity"));
@@ -76,36 +148,44 @@ export async function GET(request: Request) {
       where.createdAt = createdAt;
     }
 
+    if (sortBy === "severity") {
+      // Severity uses a custom rank (high < medium < low), so we cannot push
+      // the ordering into Prisma's typed orderBy. Fetch the filtered set,
+      // sort + paginate in JS. Demo alert volume is well below where this
+      // matters; the natural perf upgrade is a denormalized severity_rank
+      // column or a $queryRaw `ORDER BY CASE severity ...`.
+      const all = await prisma.alert.findMany({ where, include: ALERT_INCLUDE });
+      const sorted = [...all].sort((a, b) => {
+        const rankA = SEVERITY_RANK[a.severity] ?? 999;
+        const rankB = SEVERITY_RANK[b.severity] ?? 999;
+        if (rankA !== rankB) {
+          return sortOrder === "desc" ? rankA - rankB : rankB - rankA;
+        }
+        // Stable secondary sort on createdAt desc (newest tiebreaker first).
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      });
+      const total = sorted.length;
+      const skip = (page - 1) * pageSize;
+      const rows = sorted.slice(skip, skip + pageSize);
+      const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+      return NextResponse.json({
+        alerts: rows,
+        total,
+        page,
+        pageSize,
+        totalPages,
+      });
+    }
+
+    const orderBy = buildPrismaOrderBy(sortBy, sortOrder)!;
     const [total, rows] = await Promise.all([
       prisma.alert.count({ where }),
       prisma.alert.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: "desc" },
-        include: {
-          regulatoryItem: {
-            select: {
-              id: true,
-              title: true,
-              regulator: true,
-              sourceUrl: true,
-              publicationDate: true,
-              documentType: true,
-            },
-          },
-          policyChunk: {
-            select: {
-              id: true,
-              sectionHeading: true,
-              content: true,
-              chunkIndex: true,
-              policyDocument: {
-                select: { id: true, title: true, domain: true },
-              },
-            },
-          },
-        },
+        orderBy,
+        include: ALERT_INCLUDE,
       }),
     ]);
 

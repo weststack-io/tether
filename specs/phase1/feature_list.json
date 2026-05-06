@@ -545,7 +545,7 @@
         "Send GET to /api/alerts?sortBy=date&sortOrder=asc and verify oldest first",
         "Verify default sort is by date descending"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-006",
