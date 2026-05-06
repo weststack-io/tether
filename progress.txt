@@ -3621,3 +3621,33 @@ Date: 2026-05-06
 ### Next Priorities
 - SEED-004: Seed sample audit entries showing reviewer actions for demo audit trail coverage.
 - Investigate/deflake global integration DB lock behavior (test harness/process concurrency) so required full-suite runs are reliable.
+
+## Session 74 -- Data Seeding
+Date: 2026-05-06
+
+### Feature Worked On
+- SEED-002: Database seeded with pre-built demo alerts covering all five classification types from real regulatory publications matched against the dummy corpus
+- Status: PASSED
+
+### What Was Done
+- Added [demo-alerts.ts](/mnt/c/repos/weststack/demos/ralph/src/lib/seed/demo-alerts.ts) with `seedDemoAlerts(client)` to create a deterministic demo `IngestionRun`, seven curated `RegulatoryItem` rows, matching `Alert` rows, and one system-created `AuditEntry` per alert using stable `seed-demo-alerts-*` IDs.
+- Wired the helper into the canonical seed flow in [prisma/seed.ts](/mnt/c/repos/weststack/demos/ralph/prisma/seed.ts), so `npx prisma db seed` now bootstraps the alert list, dashboard, and detail views without requiring live ingestion or an API key.
+- Added [seed-demo-alerts.test.ts](/mnt/c/repos/weststack/demos/ralph/__tests__/integration/seed-demo-alerts.test.ts) to verify seeded classifications, regulator/domain coverage, citation integrity, audit-entry creation, idempotency, and policy-fixture presence.
+- Preserved the existing `feature_list.json` pass state for `SEED-002`, which had already been flipped earlier, and updated [app_spec.txt](/mnt/c/repos/weststack/demos/ralph/specs/phase1/app_spec.txt) so the seed modules listed in the project structure match the codebase.
+- Retained the Playwright evidence artifacts [SEED-002.png](/mnt/c/repos/weststack/demos/ralph/specs/phase1/screenshots/SEED-002.png) and [SEED-002-detail.png](/mnt/c/repos/weststack/demos/ralph/specs/phase1/screenshots/SEED-002-detail.png) with the feature’s implementation commit.
+
+### Testing
+- `npx prisma db seed`
+- `npm test -- --runTestsByPath __tests__/integration/seed-demo-alerts.test.ts`
+- `npx tsc --noEmit`
+- Playwright evidence already captured in:
+  - `specs/phase1/screenshots/SEED-002.png`
+  - `specs/phase1/screenshots/SEED-002-detail.png`
+
+### Blockers / Issues
+- `SEED-002` implementation had been left untracked even though `prisma/seed.ts` already imported it; this session cleaned that up and committed it as its own feature work.
+- The full `npm test` suite still has pre-existing SQLite lock/contention instability in unrelated integration tests; this session only re-ran the targeted `SEED-002` integration coverage.
+
+### Next Priorities
+- SEED-004: Seed sample audit entries showing reviewer actions on alerts beyond the system-created baseline entries added here.
+- Investigate/deflake global integration DB lock behavior so the repository can satisfy the clean-session full-suite expectation consistently.

@@ -42,7 +42,7 @@ Environment variables (.env.local):
 tether/
 ├── prisma/
 │   └── schema.prisma
-│   └── seed.ts                      # Seed dummy policy corpus + demo alerts
+│   └── seed.ts                      # Seed dummy policy corpus + demo alerts + demo ingestion runs
 ├── src/
 │   ├── app/                         # Next.js App Router pages
 │   │   ├── layout.tsx               # Root layout with sidebar nav
@@ -91,6 +91,9 @@ tether/
 │   │   │   ├── scorer.ts            # Confidence + severity scoring
 │   │   │   └── citation.ts          # Citation extraction + verification
 │   │   ├── audit.ts                 # Audit log helper
+│   │   ├── seed/
+│   │   │   ├── demo-alerts.ts       # Deterministic seeded alerts from curated regulatory fixtures
+│   │   │   └── ingestion-runs.ts    # Deterministic seeded ingestion runs for dashboard/log bootstrap
 │   │   └── vectors.ts              # Vector math (cosine similarity, etc.)
 │   ├── components/
 │   │   ├── ui/                      # shadcn/ui primitives

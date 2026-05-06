@@ -50,6 +50,7 @@ dev.db-journal
 # loop driver artifacts
 .dev-server.log
 .dev-server.pid
+.codex
 
 # typescript
 *.tsbuildinfo
