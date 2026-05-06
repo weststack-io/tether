@@ -2179,3 +2179,68 @@ Date: 2026-05-06
 - DASH-005 (priority 54): recent ingestion activity (last 5 runs). /api/dashboard/stats already returns recentIngestion.
 - LIST-001..008: alerts list UI session.
 - DETAIL-001..006: alert-detail UI session.
+
+## Session 51 -- Dashboard Trigger Ingestion Button
+Date: 2026-05-06
+
+### Feature Worked On
+- DASH-002 (priority 51): dashboard "Trigger Ingestion" button. Visible on the dashboard, kicks off an ingestion run on click, shows a loading indicator on the button while in flight, and surfaces a success/failure toast when the run completes.
+- Status: PASSED
+
+### What Was Done
+- Created src/components/dashboard/TriggerIngestionButton.tsx (107-line client component): POSTs to /api/ingestion/trigger with an empty JSON body; on a 200 response, updates the in-flight Sonner loading toast with the run id; polls /api/ingestion/log every 1.5s (50-page window) for the matching run; when the run leaves 'running' state, swaps the loading toast for a success toast ("Ingestion run completed: N processed, M flagged") on `completed`, or an error toast ("Ingestion run ended with status: X") on any other terminal state. Has a 120s safety timeout that swaps in a warning toast and stops polling. Calls router.refresh() on terminal status so the server-rendered severity cards pick up any newly-created alerts.
+- Mounted the existing Sonner Toaster in src/app/layout.tsx (top-right, richColors). The Toaster component (src/components/ui/sonner.tsx) was installed back in earlier sessions but never wired in. richColors=true so success / warning / error map to themed background tints rather than monochrome -- gives the demo a clearer "this worked" / "this didn't" visual cue.
+- Wired the new client component into the dashboard server component (src/app/page.tsx): added a flex header row that puts the Dashboard heading on the left and the TriggerIngestionButton on the right (justify-between, items-start). The page itself stays a server component -- the button is a client island, which keeps the prisma severity-counts query out of the client bundle.
+- Why a client component for the button: it needs useState (pending), useRef (cleanup token to prevent setState-after-unmount), useEffect, useCallback, and fetch -- none of which work in a server component. The smallest island that contains all of those primitives is the button itself.
+- Why poll /api/ingestion/log instead of opening a /api/ingestion/runs/:id endpoint or using SSE: log endpoint already exists (API-013) and returns the data we need including itemsProcessed/itemsFlagged for the success toast. A dedicated single-run endpoint is one more HTTP route to maintain for a single demo button. SSE/streaming would be the right answer for a production system but is overkill for the demo's "click, wait, see toast" flow.
+- Why pageSize=50 on the log poll: the trigger button creates a new IngestionRun row, which becomes the most recent row. It will always be in the top page unless 50+ runs have been triggered between click and poll, which is impossible in normal use. Using a small page keeps the polling cheap.
+- Why a 1.5s poll interval: fast enough to feel responsive, slow enough that it doesn't beat up the API for a multi-second ingestion run. The orchestrator typically completes the demo's stub regulator-fetch flow in under 5s, so the user sees ~3-4 polls before the toast updates.
+- Why router.refresh() on completion: the dashboard's severity cards are rendered by an async server component that runs prisma.alert.groupBy. If the ingestion run created new alerts, those alerts won't show until the next request. router.refresh() re-fetches the server component for the current route without a full page reload, so the cards animate to their new counts after the toast.
+- Why the success toast includes "N processed, M flagged" rather than just "completed": gives the user a quick confirmation that the run actually did something. /api/ingestion/log returns those counters as part of the run row, so we get them for free.
+- Why the trigger button sends `body: "{}"` rather than `body: ""`: API-011's handler accepts both, but the explicit empty-object body matches the documented contract more cleanly and avoids any future ambiguity if the handler tightens up.
+- Decision: did NOT add a "request already in flight" gate at the UI level beyond `disabled={pending}`. The button blocks itself once you click; the API has no single-flight protection, but the button does. Concurrent clicks from different tabs would still trigger concurrent runs, but that's the same behavior the API already has.
+- Decision: did NOT route the click through a server action. Server actions would buy us automatic revalidation but at the cost of a double round-trip (action -> trigger endpoint) and worse error surfacing. The direct fetch is simpler.
+- Decision: did NOT add a separate "ingestion in progress" UI banner / status pill beyond the toast. The verification spec calls for a "loading indicator" -- the disabled button with the spinning Loader2Icon and "Running…" text covers that contractually. A page-level banner would belong to a future "show me what's running right now" feature.
+- Decision: did NOT add a manual cancel/stop button. The trigger endpoint kicks off a fire-and-forget; cancelling mid-flight would require orchestrator changes and is out of DASH-002's scope.
+- Decision: kept the button using the existing Button primitive's `default` variant (primary blue). This makes it the visually-dominant CTA on the dashboard, matching its role as "the one big action a user takes from this page."
+- Authored __tests__/integration/dashboard-page-dash002.test.ts (3 tests, ~75 lines) with three live-UI checks: (1) the button renders with data-testid and "Trigger Ingestion" label and starts in non-pending state, (2) the Sonner Toaster region (aria-label="Notifications") is mounted in the layout so toasts have somewhere to render, and (3) the underlying trigger->log polling contract works end-to-end -- POST /api/ingestion/trigger returns runId/status, then GET /api/ingestion/log surfaces that runId immediately. afterAll cleans up the IngestionRun row created during the contract test.
+- Why the integration test doesn't drive the actual click: Jest with the existing setup doesn't render React components in-process, and even with an RSC harness simulating sonner toasts requires jsdom plus useTheme provider plumbing. The contract the button relies on (markup + API behavior) is what the integration test locks in; the runtime click flow is verified via Playwright in this session.
+
+### Files Modified / Created
+- src/components/dashboard/TriggerIngestionButton.tsx (new, 107-line client component)
+- src/app/layout.tsx (added Toaster mount, +2 lines)
+- src/app/page.tsx (wrapped header in flex row, added button import, +5 lines net)
+- __tests__/integration/dashboard-page-dash002.test.ts (new, 3 tests, ~75 lines)
+- specs/phase1/screenshots/DASH-002.png (new full-page Playwright screenshot showing the dashboard with two success toasts overlaid -- captured after two manual button presses)
+- specs/phase1/feature_list.json (DASH-002 passes -> true)
+
+### Testing
+- Verified all 5 DASH-002 acceptance steps:
+  1. Navigate to http://localhost:3000: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector".
+  2. "Trigger Ingestion" button visible: Playwright accessibility snapshot shows `button "Trigger Ingestion" [ref=e32]` next to the Dashboard heading. Integration test grep'd `data-testid="trigger-ingestion-button"` and `Trigger Ingestion` literals in rendered HTML.
+  3. Click the button: Playwright clicked via `page.getByTestId('trigger-ingestion-button').click()`.
+  4. Loading/in-progress indicator appears: confirmed via Playwright `evaluate` immediately after click -- button text changed from "Trigger Ingestion" to "Running…", `data-pending` flipped from "false" to "true", `disabled` flipped from false to true. The inline Loader2Icon has `animate-spin` so the visible spinner is a CSS animation. The screenshot captures the post-completion state where the button has reset, but the data-pending state transition is observable in the evaluate result.
+  5. Success notification appears when the run completes: Playwright `wait_for` matched "Ingestion run completed" within ~7s; snapshot then shows two listitems under the Notifications region (one from the snapshot-time click, one from the eval-time click), each containing "Ingestion run completed: 0 processed, 0 flagged". The richColors green tint is visible in the screenshot at specs/phase1/screenshots/DASH-002.png.
+- Test suite results: `npm test` -> 45 suites / 319 tests passing (was 44 / 316; +1 suite / +3 tests for DASH-002). Stable at ~47s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight regression curl: dashboard root -> 200 with all three data-severity attributes; POST /api/ingestion/trigger -> 200 with runId/status. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001 all unchanged.
+- Live Playwright verification:
+  - Navigated to http://localhost:3000/, confirmed button presence and the existing severity cards.
+  - Clicked, confirmed pending-state attributes via inline evaluate.
+  - Waited for "Ingestion run completed" toast text, confirmed it appears.
+  - Saved full-page screenshot to specs/phase1/screenshots/DASH-002.png.
+  - Console: 0 errors, 0 warnings.
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-50: Turbopack does not pick up new client-component imports via HMR cleanly. `./scripts/dev-up.sh` resolved it (same workaround Sessions 47-50 documented). Not a regression.
+- The polling-based completion detection is "live UI" (depends on the dev server's /api/ingestion/log endpoint being reachable from the browser). If the orchestrator hangs without writing a terminal status, the 120s safety timeout fires and a warning toast is shown -- but the IngestionRun row would stay in 'running' forever in the DB. A future hardening pass could add a watchdog that flips orphaned 'running' rows to 'failed' after some bounded time.
+- The Sonner Toaster relies on `useTheme` from next-themes. There is no ThemeProvider wired in this app, so useTheme returns its `system` default and the toast theme inherits OS preference. This is fine for the demo but means a dark/light app theme toggle won't propagate to toasts until a ThemeProvider is added. Out of scope for DASH-002.
+- The integration test for the static markup ("renders a Trigger Ingestion button") could in principle pass even if the client-component bundle never loads (the SSR'd HTML includes the button shell). The runtime click flow is what proves the JS actually runs, and that's covered by Playwright. Future runs that lose JS bundling would still pass the integration test but fail the Playwright check -- acceptable signal split.
+- The screenshot shows two success toasts because the verification flow clicked twice (once via Playwright click, once via the inline-evaluate diagnostic). Functionally this is the same outcome -- two clicks, two runs, two toasts -- and confirms the button is re-clickable after a run completes.
+
+### Next Priorities
+- DASH-003 (priority 52): dashboard alerts-by-regulator breakdown (SEC/FINRA/CFPB/OCC). /api/dashboard/stats already returns `alertsByRegulator` -- the simplest implementation calls that endpoint or replicates its groupBy in the page server component.
+- DASH-004 (priority 53): alerts-by-policy-domain breakdown.
+- DASH-005 (priority 54): recent ingestion activity (last 5 runs). /api/dashboard/stats already returns `recentIngestion`, and /api/ingestion/log returns full pagination -- DASH-005 is mostly UI for already-served data.
+- LIST-001..008: alerts list UI session.
+- DETAIL-001..006: alert-detail UI session.
+- Possible follow-up to DASH-002: add a ThemeProvider so dark-mode toasts theme correctly; expose a "currently running" row on the dashboard so a refresh during ingestion still shows the in-flight state.
