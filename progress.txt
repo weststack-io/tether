@@ -3722,3 +3722,33 @@ Date: 2026-05-06
 ### Next Priorities
 - Finish UI-001 by stabilizing the repository-wide integration run so `npm test` passes cleanly with the new streamed loading UI in place.
 - Investigate the full-suite SQLite/libsql timeout cascade around ingestion/pipeline tests and live server activity before attempting UI-002.
+
+## Session 77 -- UI
+Date: 2026-05-06
+
+### Feature Worked On
+- UI-001: Loading states are displayed for all async operations (dashboard stats, alert list, alert detail, ingestion log)
+- Status: PASSED
+
+### What Was Done
+- Verified the existing route-level loading boundaries on `/`, `/alerts`, `/alerts/[id]`, and `/ingestion` and promoted `UI-001` from partial to passing in `specs/phase1/feature_list.json`.
+- Added a SQLite WAL bootstrap in `jest.setup.ts` so Jest switches the shared local database file into write-ahead logging mode before suites run; this removed the reader/writer lock contention that had been blocking repository-wide verification while the dev server was active.
+- Refreshed the browser screenshots for the dashboard and alerts loading states in `specs/phase1/screenshots/UI-001-dashboard.png` and `specs/phase1/screenshots/UI-001-alerts.png`.
+- Updated `.gitignore` to ignore SQLite WAL sidecar files (`prisma/dev.db-wal`, `prisma/dev.db-shm`) so the new journal mode does not leave the worktree dirty after test runs.
+
+### Testing
+- Regression checks before close-out:
+  - `npm test -- --runTestsByPath __tests__/integration/alerts-page-list001.test.ts` -> passed
+  - `npm test -- --runTestsByPath __tests__/integration/ingestion-page-inglog001.test.ts` -> passed
+- Feature verification:
+  - `npm test -- --runTestsByPath __tests__/unit/loading-ui.test.tsx __tests__/integration/ui-loading.test.ts` -> passed
+  - Headless Chrome verification confirmed loading markers stream before final view markers on dashboard, alerts, alert detail, and ingestion routes; screenshots saved under `specs/phase1/screenshots/UI-001-*.png`
+  - `npm test` -> 70 suites / 438 tests passed
+
+### Blockers / Issues
+- Initial full-suite runs still hit SQLite/libsql write locks against the shared `prisma/dev.db` file. Enabling WAL mode at Jest startup resolved the contention for the required in-band `npm test` run.
+- A direct DOM capture of the alert-detail loading shell was timing-sensitive in headless Chrome even though the streamed HTML and integration test both showed the fallback correctly; browser verification relied on streamed-marker confirmation plus the saved route screenshot for that page.
+
+### Next Priorities
+- UI-002: Empty states are displayed when no data matches the current filters or when tables have no data.
+- If lock contention resurfaces in future sessions, check for out-of-band parallel test runs first; the required single-process `npm test` path is now stable with WAL enabled.
