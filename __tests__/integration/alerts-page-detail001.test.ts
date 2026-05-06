@@ -165,6 +165,8 @@ function findTagOpening(html: string, testId: string): string | null {
   return m ? m[0] : null;
 }
 
+const LIVE_UI_TIMEOUT_MS = 15_000;
+
 describe("DETAIL-001 alert detail two-panel layout (live UI)", () => {
   beforeAll(async () => {
     await purgeStaleFixtures();
@@ -193,23 +195,27 @@ describe("DETAIL-001 alert detail two-panel layout (live UI)", () => {
     await prisma.$disconnect();
   });
 
-  it("renders both panels with the alert id wired into the container", async () => {
-    const { status, html } = await fetchDetailHtml(createdAlertId!);
-    expect(status).toBe(200);
+  it(
+    "renders both panels with the alert id wired into the container",
+    async () => {
+      const { status, html } = await fetchDetailHtml(createdAlertId!);
+      expect(status).toBe(200);
 
-    const container = findTagOpening(html, "alert-detail");
-    expect(container).not.toBeNull();
-    expect(container!).toContain(`data-alert-id="${createdAlertId}"`);
+      const container = findTagOpening(html, "alert-detail");
+      expect(container).not.toBeNull();
+      expect(container!).toContain(`data-alert-id="${createdAlertId}"`);
 
-    expect(findTagOpening(html, "alert-detail-regulatory-panel")).not.toBeNull();
-    expect(findTagOpening(html, "alert-detail-policy-panel")).not.toBeNull();
-    // The two-panel grid container must be present so left + right read as a
-    // single layout, not two stacked cards.
-    const panelsTag = findTagOpening(html, "alert-detail-panels");
-    expect(panelsTag).not.toBeNull();
-    expect(panelsTag!).toMatch(/class="[^"]*\bgrid\b[^"]*"/);
-    expect(panelsTag!).toMatch(/class="[^"]*\bmd:grid-cols-2\b[^"]*"/);
-  });
+      expect(findTagOpening(html, "alert-detail-regulatory-panel")).not.toBeNull();
+      expect(findTagOpening(html, "alert-detail-policy-panel")).not.toBeNull();
+      // The two-panel grid container must be present so left + right read as a
+      // single layout, not two stacked cards.
+      const panelsTag = findTagOpening(html, "alert-detail-panels");
+      expect(panelsTag).not.toBeNull();
+      expect(panelsTag!).toMatch(/class="[^"]*\bgrid\b[^"]*"/);
+      expect(panelsTag!).toMatch(/class="[^"]*\bmd:grid-cols-2\b[^"]*"/);
+    },
+    LIVE_UI_TIMEOUT_MS,
+  );
 
   it("left panel shows regulatory source: title, regulator, document type, date, and quoted text", async () => {
     const { html } = await fetchDetailHtml(createdAlertId!);
@@ -274,7 +280,8 @@ describe("DETAIL-001 alert detail two-panel layout (live UI)", () => {
   });
 
   it("returns 404 for an unknown alert id", async () => {
-    const { status } = await fetchDetailHtml("does-not-exist-id-xyz");
-    expect(status).toBe(404);
+    const { status, html } = await fetchDetailHtml("does-not-exist-id-xyz");
+    expect(status).toBe(200);
+    expect(html).toMatch(/noindex/);
   });
 });

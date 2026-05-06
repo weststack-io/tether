@@ -153,14 +153,36 @@ type RenderedRow = {
 };
 
 function rowsFromHtml(html: string): RenderedRow[] {
-  const rowRe =
-    /<tr[^>]*data-testid="alerts-row"[^>]*data-alert-id="([^"]+)"[^>]*>([\s\S]*?)<\/tr>/g;
-  const rows: RenderedRow[] = [];
+  const rowIds = new Set<string>();
+  const rowIdRe =
+    /data-testid="alerts-row"[^>]*data-alert-id="([^"]+)"/g;
   let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(html)) !== null) {
-    rows.push({ alertId: m[1]!, body: m[2]! });
+  while ((m = rowIdRe.exec(html)) !== null) {
+    rowIds.add(m[1]!);
   }
-  return rows;
+
+  const rowChunk = (alertId: string): string => {
+    const re = new RegExp(
+      `data-testid="alerts-row"[^>]*data-alert-id="${alertId}"`,
+      "g",
+    );
+    let lastIndex = -1;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(html)) !== null) {
+      lastIndex = match.index;
+    }
+    if (lastIndex === -1) return "";
+    const nextIndex = html.indexOf('data-testid="alerts-row"', lastIndex + 1);
+    return html.slice(
+      lastIndex,
+      nextIndex === -1 ? lastIndex + 12_000 : nextIndex,
+    );
+  };
+
+  return [...rowIds].map((alertId) => ({
+    alertId,
+    body: rowChunk(alertId),
+  }));
 }
 
 function rowLinkHref(row: RenderedRow): string | null {

@@ -173,17 +173,36 @@ type RenderedRow = {
 };
 
 function rowsFromHtml(html: string): RenderedRow[] {
-  const rowRe =
-    /<tr[^>]*data-testid="alerts-row"[^>]*data-alert-id="([^"]+)"[^>]*>([\s\S]*?)<\/tr>/g;
-  const rows: RenderedRow[] = [];
+  const rowIds = new Set<string>();
+  const rowIdRe =
+    /data-testid="alerts-row"[^>]*data-alert-id="([^"]+)"/g;
   let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(html)) !== null) {
-    const alertId = m[1]!;
-    const body = m[2]!;
-    const regMatch = body.match(
+  while ((m = rowIdRe.exec(html)) !== null) {
+    rowIds.add(m[1]!);
+  }
+
+  const rowChunk = (alertId: string): string => {
+    const re = new RegExp(
+      `data-testid="alerts-row"[^>]*data-alert-id="${alertId}"`,
+      "g",
+    );
+    let lastIndex = -1;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(html)) !== null) {
+      lastIndex = match.index;
+    }
+    return lastIndex === -1 ? "" : html.slice(lastIndex, lastIndex + 12_000);
+  };
+
+  const rows: RenderedRow[] = [];
+  for (const alertId of rowIds) {
+    const regMatch = rowChunk(alertId).match(
       /data-testid="alerts-cell-regulator"[^>]*data-regulator="([^"]+)"/,
     );
-    rows.push({ alertId, regulator: regMatch ? regMatch[1]! : "" });
+    rows.push({
+      alertId,
+      regulator: regMatch ? regMatch[1]! : "",
+    });
   }
   return rows;
 }

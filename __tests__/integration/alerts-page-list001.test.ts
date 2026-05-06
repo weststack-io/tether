@@ -174,28 +174,50 @@ type RenderedRow = {
 };
 
 function rowsFromHtml(html: string): RenderedRow[] {
-  const rowRe =
-    /<tr[^>]*data-testid="alerts-row"[^>]*data-alert-id="([^"]+)"[^>]*>([\s\S]*?)<\/tr>/g;
-  const rows: RenderedRow[] = [];
+  const rowIds = new Set<string>();
+  const rowIdRe =
+    /data-testid="alerts-row"[^>]*data-alert-id="([^"]+)"/g;
   let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(html)) !== null) {
-    const alertId = m[1]!;
-    const body = m[2]!;
-    const attr = (cellId: string, attrName: string): string => {
-      const re = new RegExp(
-        `data-testid="${cellId}"[^>]*${attrName}="([^"]+)"`,
-      );
-      const cm = body.match(re);
-      return cm ? cm[1]! : "";
-    };
+  while ((m = rowIdRe.exec(html)) !== null) {
+    rowIds.add(m[1]!);
+  }
+
+  const rowChunk = (alertId: string): string => {
+    const re = new RegExp(
+      `data-testid="alerts-row"[^>]*data-alert-id="${alertId}"`,
+      "g",
+    );
+    let lastIndex = -1;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(html)) !== null) {
+      lastIndex = match.index;
+    }
+    return lastIndex === -1 ? "" : html.slice(lastIndex, lastIndex + 12_000);
+  };
+
+  const attr = (chunk: string, cellId: string, attrName: string): string => {
+    const re = new RegExp(
+      `data-testid="${cellId}"[^>]*${attrName}="([^"]+)"`,
+    );
+    const cm = chunk.match(re);
+    return cm ? cm[1]! : "";
+  };
+
+  const rows: RenderedRow[] = [];
+  for (const alertId of rowIds) {
+    const chunk = rowChunk(alertId);
     rows.push({
       alertId,
-      severity: attr("alerts-cell-severity", "data-severity"),
-      classification: attr("alerts-cell-classification", "data-classification"),
-      regulator: attr("alerts-cell-regulator", "data-regulator"),
-      domain: attr("alerts-cell-domain", "data-domain"),
-      date: attr("alerts-cell-date", "data-date"),
-      status: attr("alerts-cell-status", "data-status"),
+      severity: attr(chunk, "alerts-cell-severity", "data-severity"),
+      classification: attr(
+        chunk,
+        "alerts-cell-classification",
+        "data-classification",
+      ),
+      regulator: attr(chunk, "alerts-cell-regulator", "data-regulator"),
+      domain: attr(chunk, "alerts-cell-domain", "data-domain"),
+      date: attr(chunk, "alerts-cell-date", "data-date"),
+      status: attr(chunk, "alerts-cell-status", "data-status"),
     });
   }
   return rows;
