@@ -1044,7 +1044,7 @@
         "Verify a toast notification appears with an error message",
         "Verify the page does not crash or show a blank screen"
       ],
-      "passes": false
+      "passes": true
     }
   ]
 }
