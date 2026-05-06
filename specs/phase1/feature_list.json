@@ -839,7 +839,7 @@
         "Verify right panel shows policy passage: document title, section heading, and quoted text",
         "Verify both quoted texts are visually highlighted"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-002",
