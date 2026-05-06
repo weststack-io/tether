@@ -1031,7 +1031,7 @@
         "Navigate to ingestion log with no runs in the database",
         "Verify an empty state message is shown"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "UI-003",
