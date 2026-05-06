@@ -785,7 +785,7 @@
         "Verify only alerts from that domain are shown",
         "Clear the filter and verify all alerts return"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LIST-006",

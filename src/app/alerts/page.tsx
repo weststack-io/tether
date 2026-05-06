@@ -84,6 +84,20 @@ const STATUS_OPTIONS = [
 ] as const;
 type StatusOption = (typeof STATUS_OPTIONS)[number];
 
+const DOMAIN_OPTIONS = [
+  "bsa_aml",
+  "complaint_handling",
+  "fair_lending",
+  "reg_e",
+  "reg_z",
+  "vendor_management",
+  "info_security",
+  "cip",
+  "overdraft",
+  "marketing",
+] as const;
+type DomainOption = (typeof DOMAIN_OPTIONS)[number];
+
 function parseSortBy(raw: string | string[] | undefined): SortField {
   const v = Array.isArray(raw) ? raw[0] : raw;
   if (v && (SORT_FIELDS as readonly string[]).includes(v)) {
@@ -142,6 +156,20 @@ function parseStatuses(
   return picked.size > 0 ? [...picked] : null;
 }
 
+function parseDomains(
+  raw: string | string[] | undefined,
+): DomainOption[] | null {
+  const flat = Array.isArray(raw) ? raw.join(",") : raw;
+  if (!flat) return null;
+  const valid = new Set<string>(DOMAIN_OPTIONS);
+  const picked = new Set<DomainOption>();
+  for (const part of flat.split(",")) {
+    const v = part.trim();
+    if (valid.has(v)) picked.add(v as DomainOption);
+  }
+  return picked.size > 0 ? [...picked] : null;
+}
+
 function buildPrismaOrderBy(
   sortBy: SortField,
   sortOrder: SortOrder,
@@ -189,6 +217,7 @@ function buildWhere(
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
+  domains: DomainOption[] | null,
 ): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (regulators) {
@@ -200,6 +229,9 @@ function buildWhere(
   if (statuses) {
     where.status = { in: statuses };
   }
+  if (domains) {
+    where.policyChunk = { policyDocument: { domain: { in: domains } } };
+  }
   return where;
 }
 
@@ -209,8 +241,9 @@ async function loadAlerts(
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
+  domains: DomainOption[] | null,
 ): Promise<AlertRow[]> {
-  const where = buildWhere(regulators, severities, statuses);
+  const where = buildWhere(regulators, severities, statuses, domains);
   if (sortBy === "severity") {
     // Severity uses a custom rank (high < medium < low) that Prisma's typed
     // orderBy can't express, so fetch then sort in JS. Mirrors the API-005
@@ -246,6 +279,7 @@ function buildAlertsHref(
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
+  domains: DomainOption[] | null,
 ): string {
   const params = new URLSearchParams();
   params.set("sortBy", sortBy);
@@ -259,6 +293,9 @@ function buildAlertsHref(
   if (statuses && statuses.length > 0) {
     params.set("status", statuses.join(","));
   }
+  if (domains && domains.length > 0) {
+    params.set("domain", domains.join(","));
+  }
   return `/alerts?${params.toString()}`;
 }
 
@@ -269,6 +306,7 @@ function buildSortHref(
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
+  domains: DomainOption[] | null,
 ): string {
   // Clicking the active column toggles direction. Clicking a different column
   // selects it with the column's natural default direction (desc for date /
@@ -289,6 +327,7 @@ function buildSortHref(
     regulators,
     severities,
     statuses,
+    domains,
   );
 }
 
@@ -299,6 +338,7 @@ function buildRegulatorToggleHref(
   sortOrder: SortOrder,
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
+  domains: DomainOption[] | null,
 ): string {
   // Toggle membership of `reg` in the active filter set, preserving sort and
   // the other filters. Order within the resulting CSV mirrors
@@ -314,6 +354,7 @@ function buildRegulatorToggleHref(
     next.length > 0 ? next : null,
     severities,
     statuses,
+    domains,
   );
 }
 
@@ -324,6 +365,7 @@ function buildSeverityToggleHref(
   sortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
   statuses: StatusOption[] | null,
+  domains: DomainOption[] | null,
 ): string {
   // Toggle membership of `sev` in the active severity filter set, preserving
   // sort and the other filters. CSV order mirrors SEVERITY_OPTIONS so the URL
@@ -338,6 +380,7 @@ function buildSeverityToggleHref(
     regulators,
     next.length > 0 ? next : null,
     statuses,
+    domains,
   );
 }
 
@@ -348,6 +391,7 @@ function buildStatusToggleHref(
   sortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
+  domains: DomainOption[] | null,
 ): string {
   // Toggle membership of `st` in the active status filter set, preserving
   // sort and the other filters. CSV order mirrors STATUS_OPTIONS so the URL
@@ -361,6 +405,33 @@ function buildStatusToggleHref(
     sortOrder,
     regulators,
     severities,
+    next.length > 0 ? next : null,
+    domains,
+  );
+}
+
+function buildDomainToggleHref(
+  dom: DomainOption,
+  active: DomainOption[] | null,
+  sortBy: SortField,
+  sortOrder: SortOrder,
+  regulators: RegulatorOption[] | null,
+  severities: SeverityOption[] | null,
+  statuses: StatusOption[] | null,
+): string {
+  // Toggle membership of `dom` in the active domain filter set, preserving
+  // sort and the other filters. CSV order mirrors DOMAIN_OPTIONS so the URL
+  // is deterministic regardless of click sequence.
+  const set = new Set<DomainOption>(active ?? []);
+  if (set.has(dom)) set.delete(dom);
+  else set.add(dom);
+  const next = DOMAIN_OPTIONS.filter((d) => set.has(d));
+  return buildAlertsHref(
+    sortBy,
+    sortOrder,
+    regulators,
+    severities,
+    statuses,
     next.length > 0 ? next : null,
   );
 }
@@ -385,18 +456,24 @@ export default async function AlertsPage({
   const regulators = parseRegulators(params.regulator);
   const severities = parseSeverities(params.severity);
   const statuses = parseStatuses(params.status);
+  const domains = parseDomains(params.domain);
   const alerts = await loadAlerts(
     sortBy,
     sortOrder,
     regulators,
     severities,
     statuses,
+    domains,
   );
   const hasRegulatorFilter = regulators !== null && regulators.length > 0;
   const hasSeverityFilter = severities !== null && severities.length > 0;
   const hasStatusFilter = statuses !== null && statuses.length > 0;
+  const hasDomainFilter = domains !== null && domains.length > 0;
   const hasActiveFilter =
-    hasRegulatorFilter || hasSeverityFilter || hasStatusFilter;
+    hasRegulatorFilter ||
+    hasSeverityFilter ||
+    hasStatusFilter ||
+    hasDomainFilter;
 
   return (
     <div className="space-y-6">
@@ -413,6 +490,7 @@ export default async function AlertsPage({
         data-filter-regulator={regulators ? regulators.join(",") : ""}
         data-filter-severity={severities ? severities.join(",") : ""}
         data-filter-status={statuses ? statuses.join(",") : ""}
+        data-filter-domain={domains ? domains.join(",") : ""}
       >
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
           Regulator
@@ -429,6 +507,7 @@ export default async function AlertsPage({
                 sortOrder,
                 severities,
                 statuses,
+                domains,
               )}
               data-testid={`alerts-filter-regulator-${reg}`}
               data-active={isActive ? "true" : "false"}
@@ -458,6 +537,7 @@ export default async function AlertsPage({
                 sortOrder,
                 regulators,
                 statuses,
+                domains,
               )}
               data-testid={`alerts-filter-severity-${sev}`}
               data-active={isActive ? "true" : "false"}
@@ -487,6 +567,7 @@ export default async function AlertsPage({
                 sortOrder,
                 regulators,
                 severities,
+                domains,
               )}
               data-testid={`alerts-filter-status-${st}`}
               data-active={isActive ? "true" : "false"}
@@ -501,9 +582,39 @@ export default async function AlertsPage({
             </Link>
           );
         })}
+        <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
+          Domain
+        </span>
+        {DOMAIN_OPTIONS.map((dom) => {
+          const isActive = domains?.includes(dom) ?? false;
+          return (
+            <Link
+              key={dom}
+              href={buildDomainToggleHref(
+                dom,
+                domains,
+                sortBy,
+                sortOrder,
+                regulators,
+                severities,
+                statuses,
+              )}
+              data-testid={`alerts-filter-domain-${dom}`}
+              data-active={isActive ? "true" : "false"}
+              aria-pressed={isActive}
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground ring-primary"
+                  : "bg-muted text-muted-foreground ring-border hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              {DOMAIN_LABELS[dom] ?? dom}
+            </Link>
+          );
+        })}
         {hasActiveFilter && (
           <Link
-            href={buildAlertsHref(sortBy, sortOrder, null, null, null)}
+            href={buildAlertsHref(sortBy, sortOrder, null, null, null, null)}
             data-testid="alerts-filter-clear"
             className="ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
@@ -556,6 +667,7 @@ export default async function AlertsPage({
                               regulators,
                               severities,
                               statuses,
+                              domains,
                             )}
                             className="inline-flex items-center gap-1 hover:text-foreground"
                             data-testid={`alerts-sort-${col.key}`}
