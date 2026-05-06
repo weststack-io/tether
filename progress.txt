@@ -2576,3 +2576,72 @@ Date: 2026-05-06
 - LIST-008: row click-through to /alerts/[id].
 - DETAIL-001..006: alert detail page session.
 - Demo-data CLI (still wished-for): parameterized seeder so LIST-003..006 screenshots can show heavier per-axis variety than the LIST-001 fixture.
+
+## Session 57 -- Alert List Severity Filter
+Date: 2026-05-06
+
+### Feature Worked On
+- LIST-003 (priority 57): Alerts list page has a filter bar that filters alerts by severity. Selecting "high" narrows the table to high-severity alerts; clearing returns all alerts.
+- Status: PASSED
+
+### What Was Done
+- Extended src/app/alerts/page.tsx with a severity filter group inside the existing alerts-filter-bar. The group renders three chips (high / medium / low) with the same chip-as-link / data-active pattern used by the regulator group from LIST-002.
+- Added SEVERITY_OPTIONS const + SeverityOption type. The order (high, medium, low) matches the impact-rank order already in use by SEVERITY_RANK / the API-005 sort path -- a deterministic, semantically meaningful order.
+- Added parseSeverities(): same shape as parseRegulators(). Accepts CSV (`?severity=high,medium`) or repeated keys (joined first, then split). Unknown values (e.g. "critical") are silently dropped; empty result returns null so callers can short-circuit the where-clause. Mirrors API-005's parseCsvList for consistency.
+- Extended buildWhere() to add `where.severity = { in: [...] }` when severities is non-null. Threaded through loadAlerts() (both severity-rank-sort path and prisma-orderBy path read the same where clause).
+- Generalized buildAlertsHref() to take both (regulators, severities) so any href in the page can carry the full filter state. Updated buildSortHref() and buildRegulatorToggleHref() to forward severities; added buildSeverityToggleHref() with the same toggle/CSV-deterministic-order shape as the regulator helper.
+- Filter-bar markup carries new attributes: `data-filter-severity="high,medium"` on the bar container; each chip has `data-testid="alerts-filter-severity-{sev}"`, `data-active="true|false"`, and `aria-pressed`. Active chip uses bg-primary (matches sidebar/regulator-active treatment); inactive chips use bg-muted with the same hover/focus affordances. The label "high"/"medium"/"low" is lowercased in the underlying value but rendered with `capitalize` for readability.
+- The Clear link now drops both regulator and severity filters at once: `buildAlertsHref(sortBy, sortOrder, null, null)`. hasActiveFilter is true when either filter group has a selection -- one Clear link works for both.
+- Sort + filter composition: clicking the Severity column header preserves both regulator and severity filters in the URL; clicking a regulator chip preserves the severity filter; clicking a severity chip preserves the regulator filter. All confirmed by both the integration test and live Playwright verification.
+- Why a separate severity chip group rather than overloading the existing regulator chip group with a switcher: the spec calls them out as separate features (LIST-002 regulator, LIST-003 severity, LIST-004 status, LIST-005 domain). Keeping each group visible at once lets the user combine filters without UI state-management; the chips degrade gracefully when more groups land.
+- Why the toggle behavior is "click chip to add, click again to remove" rather than a radio (single-select): /api/alerts already accepts a CSV of severities, the where-clause emits `{ in: [...] }`, and triage workflows often want "high OR medium" -- single-select would force two URL changes for a common combined view.
+- Why "high"/"medium"/"low" lowercase in the URL (not "High"/"Medium"/"Low"): matches the canonical Severity values in the database and the /api/alerts contract; the chip label is presentational only.
+- Why severity chips appear AFTER the regulator chips with a "Severity" label inline (not on a new row): the filter bar uses flex-wrap, so visually the chips wrap onto new rows on narrow screens but stay on one line on a desktop demo. A two-row layout would be more "form-like" but takes vertical space; LIST-004..006 will continue to fit in this row before forcing a new line.
+- Why no "All" chip / "Clear severity"-only sub-link: redundant with the global Clear, which already drops every filter group. Adding a per-group clear would mean either two Clear UI elements (confusing) or a per-group caret/X on the row (more visual noise).
+- Decision: did NOT add per-severity counts ("High (12)") -- same trade-off as LIST-002, and now applies symmetrically to both groups.
+- Decision: did NOT introduce a shared `FilterChipGroup` abstraction. Two filter groups isn't enough to justify the extraction; LIST-004 (status, ~5 values) and LIST-005 (domain, ~10 values) will likely be the right point to factor it out -- by then we'll know if the abstraction needs to handle large-N variants like a search box.
+- Decision: did NOT change the empty-state copy when only severity is active. The existing `hasActiveFilter` branch already shows "No alerts match the current filter." which reads correctly whether the active filter is regulator, severity, or both.
+- Authored __tests__/integration/alerts-page-list003.test.ts (7 tests, ~330 lines). Seeds 6 fixtures spanning all 3 severities (high x2, medium x2, low x2) crossed with regulators (SEC, FINRA, OCC, CFPB) so the severity+regulator composition test has both intersection and non-overlap. Asserts: (1) bar renders with one chip per severity + no Clear when nothing active; (2) ?severity=high narrows to seeded high ids; (3) ?severity=high,medium renders the union; (4) Clear link href has no severity= param; (5) sort+severity composition (?sortBy=date&severity=high preserves both via Clear and Date sort header); (6) severity+regulator composition (?severity=high&regulator=SEC narrows to the intersection, with each chip's toggle-href preserving the OTHER axis); (7) invalid severity values (?severity=critical) are silently dropped.
+
+### Files Modified / Created
+- src/app/alerts/page.tsx (added SEVERITY_OPTIONS const + SeverityOption type, parseSeverities(), buildSeverityToggleHref(), severities threaded through buildWhere/loadAlerts/buildAlertsHref/buildSortHref/buildRegulatorToggleHref, severity chip group + label rendered inline in alerts-filter-bar; +60 lines net)
+- __tests__/integration/alerts-page-list003.test.ts (new, 7 tests, ~330 lines)
+- specs/phase1/screenshots/LIST-003-default.png (new full-page Playwright screenshot showing the regulator + severity chip groups above the 5-row table)
+- specs/phase1/screenshots/LIST-003-high.png (new full-page Playwright screenshot showing the table after clicking the High chip -- 2 high rows, High chip filled black, Clear link visible)
+- specs/phase1/feature_list.json (LIST-003 passes -> true)
+
+### Testing
+- Verified all 4 LIST-003 acceptance steps:
+  1. Navigate to http://localhost:3000/alerts: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector".
+  2. Select severity filter for 'high': clicked the High chip in Playwright; URL went to /alerts?sortBy=date&sortOrder=desc&severity=high; the High chip now has data-active="true" and Medium/Low chips have data-active="false"; Clear link appeared.
+  3. Verify only high-severity alerts are shown: DOM eval after the click returned 2 rows with severities `["high", "high"]` (regulators SEC and OCC) -- exactly the seeded high count out of 5 demo rows.
+  4. Clear the filter and verify all alerts return: clicked Clear; URL went to /alerts?sortBy=date&sortOrder=desc; DOM eval returned 5 rows with severities `["high", "medium", "low", "high", "medium"]`; Clear link no longer rendered; High chip back to data-active="false".
+- Test suite results: `npm test` -> 51 suites / 341 tests passing (was 50 / 334; +1 suite / +7 tests for LIST-003). Stable at ~60s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: dashboard root -> 200 with all data-testid markers (severity-cards, regulator-cards, domain-cards, recent-runs-table) intact; /alerts -> 200 with the new alerts-filter-severity-* chips; /alerts?regulator=SEC -> 200 (LIST-002 still works); /api/alerts?severity=high -> 200 (API-005 unchanged); /api/dashboard/stats -> 200. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..005, LIST-001..002 all unchanged.
+- Live Playwright verification:
+  - Seeded 5 demo alerts via scripts/seed-list001-demo.ts (the existing fixture happens to contain 2 high, 2 medium, 1 low -- adequate for the LIST-003 verification).
+  - Navigated to http://localhost:3000/alerts, snapshot shows the bar with both Regulator chips (SEC/FINRA/CFPB/OCC) and the new Severity chips (high/medium/low) above the 5-row table.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-003-default.png.
+  - Clicked the High chip; URL became /alerts?sortBy=date&sortOrder=desc&severity=high; table re-rendered with the 2 high rows only; High chip now filled black (active); Clear link appeared.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-003-high.png.
+  - Clicked Clear; URL became /alerts?sortBy=date&sortOrder=desc; all 5 rows returned in date-desc order.
+  - Console: 0 errors, 0 warnings.
+  - Wiped demo data via scripts/wipe-list001-demo.ts (deleted 5 items / 5 policies / 1 run).
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-56: `./scripts/dev-up.sh` was needed once after the initial src/app/alerts/page.tsx edit; the new data-testid="alerts-filter-severity-*" markers weren't appearing on the first GET /alerts after the edit. Same recurring issue, same documented workaround. Did NOT need to clear .next/dev/types this session.
+- The integration test is "live-UI" (depends on the dev server being up on :3000). Same caveat as DASH-001..005, LIST-001..002.
+- Screenshots show the same Next.js dev-tools "N" overlay near the bottom-left as Sessions 55-56's screenshots; production builds don't render it.
+- The aria-pressed-on-anchor caveat carries over from LIST-002: it's a button-only ARIA state; assistive tech may or may not honor it on `<a>`. Same trade-off (URL-driven nav -> no client JS -> use `<a>`). If a future a11y pass calls this out, swapping to a `<form>` with hidden inputs is the right move.
+- The buildAlertsHref / buildSortHref / buildRegulatorToggleHref / buildSeverityToggleHref signature is now a 5-arg shape (sortBy, sortOrder, regulators, severities) -- still readable but starting to feel positional. LIST-004 (status) will push it to 6 args. At that point it's worth refactoring to a single `AlertsViewState` object passed by reference -- not done this session because the in-tree LIST-002 pattern uses positional args and this session's brief is "extend, don't refactor".
+- Per-severity count badges ("High (12)") were skipped per the design decision above -- same caveat as the regulator group; if product asks for them, a single `prisma.alert.groupBy({ by: ['severity'], _count: { _all: true } })` second query parallelized with the main findMany via Promise.all is the natural shape.
+- The seed-list001-demo.ts fixture (2 high / 2 medium / 1 low) was authored for LIST-001's screenshots; with 5 rows it's only just enough variety for LIST-003. LIST-004 (status) and LIST-005 (domain) will benefit more from a parameterized seeder than the prior sessions did -- still on the wish-list.
+
+### Next Priorities
+- LIST-004 (priority 58): status filter (`?status=open,escalated,...`). Same shape as LIST-002/003 -- another chip group. Status values (open/accepted/dismissed/escalated/snoozed) are 5-large; would fit in the existing flex-wrap row on a desktop demo but might force a wrap on narrower viewports.
+- LIST-005 (priority 59): domain filter (`?domain=bsa_aml,...`). 10 distinct domain values -- the largest group yet. Likely the right point to extract a shared `FilterChipGroup` component or to consider a "More..." dropdown. The existing DOMAIN_LABELS map already covers display formatting.
+- LIST-006 (priority 60): date range filter (?dateFrom=&dateTo=). Different shape (two date inputs, not a chip group); /api/alerts already accepts both bounds so it's pure UI.
+- LIST-007: pagination (?page=) -- "Page X of Y" + prev/next links.
+- LIST-008: row click-through to /alerts/[id].
+- DETAIL-001..006: alert detail page session.
+- The 5-arg href-builder positional API noted above is now load-bearing for sort/filter composition. After LIST-004 pushes it to 6 args, refactoring to an `AlertsViewState` object would clean up signatures without changing behavior. A small structural improvement, not a regression.
