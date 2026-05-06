@@ -473,7 +473,7 @@
         "Verify duplicate sourceUrls are skipped",
         "Verify the run completes even if one parser fails"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INGEST-007",
