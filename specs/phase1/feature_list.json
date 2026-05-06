@@ -732,7 +732,7 @@
         "Verify alerts from the database are shown in the table",
         "Click a column header and verify the table re-sorts"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LIST-002",
