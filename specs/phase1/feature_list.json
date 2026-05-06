@@ -517,7 +517,7 @@
         "Verify each alert includes regulatoryItem summary and policyChunk summary",
         "Send GET to /api/alerts?page=2 and verify second page of results"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-004",
