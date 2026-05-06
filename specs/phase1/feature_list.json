@@ -826,7 +826,7 @@
         "Verify the browser navigates to /alerts/[id]",
         "Verify the alert detail page loads with the correct alert data"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-001",

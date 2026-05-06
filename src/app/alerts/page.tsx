@@ -916,15 +916,22 @@ export default async function AlertsPage({
                         key={alert.id}
                         data-testid="alerts-row"
                         data-alert-id={alert.id}
-                        className="border-b last:border-b-0"
+                        className="relative border-b transition-colors last:border-b-0 hover:bg-muted/40 focus-within:bg-muted/40"
                       >
                         <td
                           className="px-4 py-2"
                           data-testid="alerts-cell-severity"
                           data-severity={alert.severity}
                         >
+                          <Link
+                            href={`/alerts/${alert.id}`}
+                            data-testid="alerts-row-link"
+                            data-alert-href={`/alerts/${alert.id}`}
+                            aria-label={`View details for alert ${alert.id}`}
+                            className="absolute inset-0 z-10 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
                           <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                            className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
                               SEVERITY_BADGE_CLASS[alert.severity] ??
                               "bg-muted text-muted-foreground ring-border"
                             }`}
@@ -937,29 +944,37 @@ export default async function AlertsPage({
                           data-testid="alerts-cell-classification"
                           data-classification={alert.classification}
                         >
-                          {CLASSIFICATION_LABELS[alert.classification] ??
-                            alert.classification}
+                          <span className="relative">
+                            {CLASSIFICATION_LABELS[alert.classification] ??
+                              alert.classification}
+                          </span>
                         </td>
                         <td
                           className="px-4 py-2"
                           data-testid="alerts-cell-regulator"
                           data-regulator={alert.regulatoryItem.regulator}
                         >
-                          {alert.regulatoryItem.regulator}
+                          <span className="relative">
+                            {alert.regulatoryItem.regulator}
+                          </span>
                         </td>
                         <td
                           className="px-4 py-2"
                           data-testid="alerts-cell-domain"
                           data-domain={domain}
                         >
-                          {DOMAIN_LABELS[domain] ?? domain}
+                          <span className="relative">
+                            {DOMAIN_LABELS[domain] ?? domain}
+                          </span>
                         </td>
                         <td
                           className="whitespace-nowrap px-4 py-2 font-mono text-xs tabular-nums"
                           data-testid="alerts-cell-date"
                           data-date={alert.createdAt.toISOString()}
                         >
-                          {formatDateDetected(alert.createdAt)}
+                          <span className="relative">
+                            {formatDateDetected(alert.createdAt)}
+                          </span>
                         </td>
                         <td
                           className="px-4 py-2"
@@ -967,7 +982,7 @@ export default async function AlertsPage({
                           data-status={alert.status}
                         >
                           <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                            className={`relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
                               STATUS_BADGE_CLASS[alert.status] ??
                               "bg-muted text-muted-foreground ring-border"
                             }`}
