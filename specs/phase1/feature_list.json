@@ -532,7 +532,7 @@
         "Send GET to /api/alerts?domain=bsa_aml and verify only BSA/AML domain alerts",
         "Send GET to /api/alerts?dateFrom=2026-01-01&dateTo=2026-06-01 and verify date filtering"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-005",
