@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { TriggerIngestionButton } from "@/components/dashboard/TriggerIngestionButton";
 
 export const dynamic = "force-dynamic";
 
@@ -58,11 +59,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Open alerts by severity
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-2xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Open alerts by severity
+          </p>
+        </div>
+        <TriggerIngestionButton />
       </div>
 
       <div

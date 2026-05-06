@@ -680,7 +680,7 @@
         "Verify a loading/in-progress indicator appears",
         "Verify a success notification or status update appears when the run completes"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DASH-003",
