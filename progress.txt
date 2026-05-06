@@ -2699,3 +2699,70 @@ Date: 2026-05-06
 - LIST-008: row click-through to /alerts/[id].
 - DETAIL-001..006: alert detail page session.
 - The 6-arg href-builder positional API is now load-bearing for the sort + 3-filter composition. After LIST-005 pushes it to 7 args, refactoring to an `AlertsViewState` object would clean up signatures without changing behavior. A small structural improvement, not a regression.
+
+## Session 59 -- Alert List Domain Filter
+Date: 2026-05-06
+
+### Feature Worked On
+- LIST-005 (priority 59): Alert list page has a filter bar that filters alerts by policy domain
+- Status: PASSED
+
+### What Was Done
+- Extended src/app/alerts/page.tsx with a domain filter group inside the existing alerts-filter-bar. The group renders ten chips (bsa_aml / complaint_handling / fair_lending / reg_e / reg_z / vendor_management / info_security / cip / overdraft / marketing) with the same chip-as-link / data-active pattern used by the regulator/severity/status groups from LIST-002/003/004.
+- Added DOMAIN_OPTIONS const + DomainOption type. The order matches the existing DOMAIN_LABELS map so chip order matches the labels-by-domain ordering used elsewhere in the UI.
+- Added parseDomains(): same shape as parseRegulators/parseSeverities/parseStatuses. Accepts CSV (`?domain=bsa_aml,fair_lending`) or repeated keys. Unknown values are silently dropped; empty result returns null so callers can short-circuit the where-clause.
+- Extended buildWhere() to add `where.policyChunk = { policyDocument: { domain: { in: domains } } }` -- mirrors the API-005 where-clause shape exactly. Threaded through loadAlerts().
+- Generalized buildAlertsHref() to take all four filter axes (regulators, severities, statuses, domains). Updated buildSortHref() and the three existing toggle helpers to forward `domains`. Added buildDomainToggleHref() with the same toggle/CSV-deterministic-order shape as the other three groups.
+- Filter-bar markup carries a new `data-filter-domain="bsa_aml,fair_lending"` attribute on the bar container; each chip has `data-testid="alerts-filter-domain-{domain}"`, `data-active="true|false"`, and `aria-pressed`. Chip labels use DOMAIN_LABELS[dom] for display ("BSA/AML", "Customer Identification Program", etc.) -- the same labels the policy-domain table cell uses, so the chip the user clicks reads the same as the cell that filter narrows down to.
+- The Clear link now drops all four filter groups at once: `buildAlertsHref(sortBy, sortOrder, null, null, null, null)`. hasActiveFilter is true when any filter group has a selection -- one Clear link works for all four.
+- Sort + filter composition: clicking any column header preserves all four filter axes; clicking any chip preserves the other three. All confirmed by both the integration test and live Playwright verification.
+- Why a separate domain chip group rather than a select / autocomplete: the 10-domain set fits inside the existing flex-wrap row at desktop width (verified in screenshot), and matching the LIST-002/003/004 chip pattern keeps the bar's "click chip to add, click again to remove" interaction consistent across all four axes. A select would force a different mental model for one of the four groups; a "More..." dropdown would only be needed if domain count grew significantly past 10.
+- Why the chip labels use DOMAIN_LABELS (not the raw CSV slug like other groups): regulator codes (SEC) and severity/status values (high/open) are already short, capitalized, and human-readable; domain slugs (bsa_aml, complaint_handling) are not. Using the labels makes the chips match the table cell, removes the need for the user to mentally translate "bsa_aml" -> "BSA/AML", and keeps the URL slug-based for stable shareable links.
+- Why no "All" chip / "Clear domain"-only sub-link: same reasoning as LIST-002/003/004 -- the global Clear drops every filter group and is the single canonical reset.
+- Decision: did NOT add per-domain count badges ("BSA/AML (12)") -- consistent with LIST-002/003/004. The natural shape if product asks for them is a `prisma.alert.groupBy({ by: ['policyChunk.policyDocument.domain'], _count: { _all: true } })` parallelized with the main findMany via Promise.all (note: Prisma can't groupBy across a relation, so it'd realistically be a $queryRaw or a denormalized column on Alert).
+- Decision: did NOT introduce a shared FilterChipGroup abstraction even at 4 groups -- the LIST-005 group has different label semantics (DOMAIN_LABELS vs raw slug), so a generic component would need a `renderLabel` callback, which adds boilerplate without removing much duplication. If LIST-006 introduces a fifth chip-style group (it won't -- it's a date range), THAT would be the right point. As-is, the four groups share enough that any one of them is a good template for the next.
+- Decision: did NOT change the empty-state copy when only domain is active. The existing `hasActiveFilter` branch already shows "No alerts match the current filter." which reads correctly regardless of which axis is active.
+- Authored __tests__/integration/alerts-page-list005.test.ts (7 tests, ~430 lines). Seeds 7 fixtures spanning 5 distinct domains (bsa_aml x2, fair_lending x2, complaint_handling x1, reg_e x1, reg_z x1) crossed with regulators/severities/statuses so the four-axis composition test has both intersection (SEC AND high AND open AND bsa_aml) and non-overlap. Asserts: (1) bar renders one chip per domain (10) + no Clear when nothing active; (2) ?domain=bsa_aml narrows to seeded bsa_aml ids; (3) ?domain=bsa_aml,fair_lending renders the union; (4) Clear link href has no domain= param; (5) sort+domain composition (?sortBy=date&domain=bsa_aml preserves both via Clear and Date sort header); (6) domain+regulator+severity+status composition (each chip group's toggle-href preserves the OTHER three axes); (7) invalid domain values (?domain=spaceflight) are silently dropped.
+
+### Files Modified / Created
+- src/app/alerts/page.tsx (added DOMAIN_OPTIONS const + DomainOption type, parseDomains(), buildDomainToggleHref(), domains threaded through buildWhere/loadAlerts/buildAlertsHref/buildSortHref/buildRegulatorToggleHref/buildSeverityToggleHref/buildStatusToggleHref, domain chip group + label rendered inline in alerts-filter-bar after Status; +95 lines net)
+- __tests__/integration/alerts-page-list005.test.ts (new, 7 tests, ~430 lines)
+- specs/phase1/screenshots/LIST-005-default.png (new full-page Playwright screenshot showing all four chip groups -- Regulator, Severity, Status, Domain -- above the 5-row table)
+- specs/phase1/screenshots/LIST-005-bsa_aml.png (new full-page Playwright screenshot showing the table after clicking the BSA/AML chip -- 1 bsa_aml row, BSA/AML chip filled black, Clear link visible)
+- specs/phase1/feature_list.json (LIST-005 passes -> true)
+
+### Testing
+- Verified all 4 LIST-005 acceptance steps:
+  1. Navigate to http://localhost:3000/alerts: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector". Domain chip group renders 10 chips with data-active="false"; no Clear link.
+  2. Select domain filter for 'bsa_aml': clicked the BSA/AML chip in Playwright; URL went to /alerts?sortBy=date&sortOrder=desc&domain=bsa_aml; BSA/AML chip became data-active="true"; Clear link appeared.
+  3. Verify only alerts from that domain are shown: DOM eval after the click returned 1 row with domain="bsa_aml" (regulator SEC, severity high) -- exactly the seeded bsa_aml count out of the 5 demo rows.
+  4. Clear the filter and verify all alerts return: clicked Clear; URL went to /alerts?sortBy=date&sortOrder=desc; DOM eval returned 5 rows with domains [bsa_aml, complaint_handling, fair_lending, reg_e, vendor_management]; Clear link no longer rendered; no domain chip data-active="true".
+- Test suite results: `npm test` -> 53 suites / 355 tests passing (was 52 / 348; +1 suite / +7 tests for LIST-005). Stable at ~66s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: dashboard root -> 200; /alerts?regulator=SEC -> 200 (LIST-002 still works); /alerts?severity=high -> 200 (LIST-003 still works); /alerts?status=open -> 200 (LIST-004 still works); /alerts?domain=bsa_aml -> 200 with the new alerts-filter-domain-bsa_aml chip data-active="true". INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..005, LIST-001..004 all unchanged.
+- Live Playwright verification:
+  - Seeded 5 demo alerts via scripts/seed-list001-demo.ts (the existing fixture has domains bsa_aml/complaint_handling/fair_lending/reg_e/vendor_management -- one alert per domain).
+  - Navigated to http://localhost:3000/alerts; snapshot shows all four chip groups (Regulator: SEC/FINRA/CFPB/OCC; Severity: High/Medium/Low; Status: Open/Accepted/Dismissed/Escalated/Snoozed; Domain: BSA/AML/.../Marketing) above the 5-row table.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-005-default.png.
+  - Clicked the BSA/AML chip; URL became /alerts?sortBy=date&sortOrder=desc&domain=bsa_aml; table re-rendered with the 1 bsa_aml row only (SEC / high / Drifted); BSA/AML chip filled black; Clear link appeared.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-005-bsa_aml.png.
+  - Clicked Clear; URL became /alerts?sortBy=date&sortOrder=desc; all 5 rows returned in date-desc order.
+  - Console: 0 errors, 0 warnings.
+  - Wiped demo data via scripts/wipe-list001-demo.ts (deleted 5 items / 5 policies / 1 run).
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-58: `./scripts/dev-up.sh` was needed once after the initial src/app/alerts/page.tsx edit; the new data-testid="alerts-filter-domain-*" markers weren't appearing on the first GET /alerts after the edit. Same recurring issue, same documented workaround. Did NOT need to clear .next/dev/types this session.
+- The integration test is "live-UI" (depends on the dev server being up on :3000). Same caveat as DASH-001..005 / LIST-001..004.
+- Screenshots show the same Next.js dev-tools "N" overlay near the bottom-left as Sessions 55-58's screenshots; production builds don't render it.
+- The aria-pressed-on-anchor caveat continues from LIST-002/003/004: ARIA spec defines aria-pressed on `<button>`; using it on `<a>` is a minor a11y compromise inherited from the URL-driven nav design.
+- The buildAlertsHref / buildSortHref / build{Regulator,Severity,Status,Domain}ToggleHref signatures are now a 7-arg shape (sortBy, sortOrder, regulators, severities, statuses, domains). As Sessions 57/58 noted, the 7-arg point is when the positional API really starts to feel cramped -- the toggle helpers each pass-through 5 of the 7 args and only differ in which axis they rewrite. After LIST-006 (which adds two date-bound args, not chip groups, but still threads through the same builders), the signatures will be 9-arg. Refactoring to a single `AlertsViewState` object passed by reference, with helper methods like `state.toggleDomain(d)` that return a new state, is the natural cleanup. Held off this session because the brief is "extend, don't refactor" and the in-tree pattern is positional.
+- The 10 domain chips fit on two rows at 1280px desktop width (visible in the LIST-005-default screenshot, where the last 3 chips wrap to a second row). At narrower viewport widths more wrapping happens. Acceptable for the demo; if the bar gets cluttered at smaller widths, a "More..." dropdown for the rarer domains is the natural next step.
+- Per-domain count badges ("BSA/AML (12)") were skipped, mirroring LIST-002/003/004. Different shape from those groups: counting domains requires either a relation-aware groupBy (Prisma can't currently express that without raw SQL) or a denormalized domain column on Alert.
+- Domain chip labels use DOMAIN_LABELS while the URL uses the raw slug -- this is intentional (labels are presentational, slugs are the wire format), but it does mean the chip's `key` prop, `data-testid`, and `href` use the slug while the visible text uses the label. Worth noting for any future a11y / SEO pass.
+
+### Next Priorities
+- LIST-006 (priority 60): date range filter (?dateFrom=&dateTo=). Different shape (two date inputs, not a chip group); /api/alerts already accepts both bounds and uses parseDateBound() to handle YYYY-MM-DD vs full ISO. The natural UI is two `<input type="date">` controls in a small `<form method="get">` so submitting preserves all the chip filters via hidden inputs.
+- LIST-007: pagination (?page=) -- "Page X of Y" + prev/next links. /api/alerts already returns total/totalPages.
+- LIST-008: row click-through to /alerts/[id].
+- DETAIL-001..006: alert detail page session.
+- The 7-arg href-builder positional API noted above is now genuinely overdue for an `AlertsViewState` refactor. After LIST-006's date inputs push it to 9 args, the cleanup-without-behavior-change PR is the right shape: introduce the type, port the existing helpers, no diff in rendered HTML.
+- Demo-data CLI (still wished-for): a parameterized seeder ('node scripts/seed-demo.ts --count 30 --domains bsa_aml=10,fair_lending=8') would let LIST-005..007 screenshots show heavier per-axis variety than the LIST-001 fixture's 5 rows.
