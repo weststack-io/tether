@@ -853,7 +853,7 @@
         "Verify severity badge is visible with correct color coding",
         "Verify plain-language explanation text is displayed below the panels"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-003",

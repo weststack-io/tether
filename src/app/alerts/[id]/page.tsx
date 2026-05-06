@@ -12,6 +12,46 @@ const REGULATOR_BADGE_CLASS: Record<string, string> = {
   OCC: "bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-900",
 };
 
+const SEVERITY_BADGE_CLASS: Record<string, string> = {
+  high: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900",
+  medium:
+    "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900",
+  low: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900",
+};
+
+const CLASSIFICATION_BADGE_CLASS: Record<string, string> = {
+  aligned:
+    "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900",
+  drifted:
+    "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900",
+  contradicted:
+    "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900",
+  ambiguous:
+    "bg-purple-50 text-purple-700 ring-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:ring-purple-900",
+  no_material_impact:
+    "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:ring-slate-700",
+};
+
+const CLASSIFICATION_LABELS: Record<string, string> = {
+  aligned: "Aligned",
+  drifted: "Drifted",
+  contradicted: "Contradicted",
+  ambiguous: "Ambiguous",
+  no_material_impact: "No Material Impact",
+};
+
+// Confidence-bar fill color tracks classification — drift/contradiction read
+// red even at low confidence, alignment reads green, ambiguous/no-material
+// read neutral. This pairs visually with the classification badge so a quick
+// glance at the bar communicates both "how confident" and "of what".
+const CONFIDENCE_BAR_CLASS: Record<string, string> = {
+  aligned: "bg-emerald-500 dark:bg-emerald-400",
+  drifted: "bg-amber-500 dark:bg-amber-400",
+  contradicted: "bg-red-500 dark:bg-red-400",
+  ambiguous: "bg-purple-500 dark:bg-purple-400",
+  no_material_impact: "bg-slate-400 dark:bg-slate-500",
+};
+
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   final_rule: "Final Rule",
   proposed_rule: "Proposed Rule",
@@ -75,6 +115,20 @@ export default async function AlertDetailPage({
   const documentTypeLabel =
     DOCUMENT_TYPE_LABELS[regItem.documentType] ?? regItem.documentType;
   const domainLabel = DOMAIN_LABELS[policy.domain] ?? policy.domain;
+  const classificationClass =
+    CLASSIFICATION_BADGE_CLASS[alert.classification] ??
+    "bg-muted text-muted-foreground ring-border";
+  const classificationLabel =
+    CLASSIFICATION_LABELS[alert.classification] ?? alert.classification;
+  const severityClass =
+    SEVERITY_BADGE_CLASS[alert.severity] ??
+    "bg-muted text-muted-foreground ring-border";
+  const confidenceBarClass =
+    CONFIDENCE_BAR_CLASS[alert.classification] ?? "bg-primary";
+  // Clamp into [0, 1] in case a malformed seed/classifier output ever sneaks
+  // through; the bar should never render past 100% or as a negative width.
+  const confidenceFraction = Math.max(0, Math.min(1, alert.confidence));
+  const confidencePct = Math.round(confidenceFraction * 100);
 
   return (
     <div className="space-y-6" data-testid="alert-detail" data-alert-id={alert.id}>
@@ -84,6 +138,61 @@ export default async function AlertDetailPage({
           Side-by-side comparison of the regulatory source and the policy
           passage that triggered this alert.
         </p>
+      </div>
+
+      <div
+        className="space-y-3 rounded-lg border bg-card p-4 shadow-sm"
+        data-testid="alert-detail-summary"
+        data-classification={alert.classification}
+        data-severity={alert.severity}
+        data-confidence={confidenceFraction}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            data-testid="alert-detail-classification-badge"
+            data-classification={alert.classification}
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${classificationClass}`}
+          >
+            {classificationLabel}
+          </span>
+          <span
+            data-testid="alert-detail-severity-badge"
+            data-severity={alert.severity}
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ${severityClass}`}
+          >
+            {alert.severity} severity
+          </span>
+        </div>
+
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <span>Confidence</span>
+            <span
+              data-testid="alert-detail-confidence-value"
+              data-confidence={confidenceFraction}
+              className="font-mono tabular-nums text-foreground"
+            >
+              {`${confidencePct}%`}
+            </span>
+          </div>
+          <div
+            data-testid="alert-detail-confidence-bar"
+            data-confidence={confidenceFraction}
+            data-confidence-pct={confidencePct}
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={confidencePct}
+            aria-label={`Classification confidence ${confidencePct}%`}
+            className="h-2 w-full overflow-hidden rounded-full bg-muted"
+          >
+            <div
+              data-testid="alert-detail-confidence-bar-fill"
+              className={`h-full rounded-full transition-all ${confidenceBarClass}`}
+              style={{ width: `${confidencePct}%` }}
+            />
+          </div>
+        </div>
       </div>
 
       <div
@@ -183,6 +292,23 @@ export default async function AlertDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <Card data-testid="alert-detail-explanation">
+        <CardHeader>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            Why this was flagged
+          </div>
+          <CardTitle>Plain-language explanation</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p
+            data-testid="alert-detail-explanation-text"
+            className="whitespace-pre-line text-sm leading-relaxed text-foreground"
+          >
+            {alert.explanation}
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
