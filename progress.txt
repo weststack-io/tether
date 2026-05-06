@@ -2504,3 +2504,75 @@ Date: 2026-05-06
 - LIST-008 (priority 62): row click-through to /alerts/[id] (currently the row has no `<Link>` wrap; would wrap each `<tr>` in a Link or attach onClick that pushes to /alerts/{id}).
 - DETAIL-001..006: alert-detail page session.
 - The seed-list001-demo.ts script is intentionally specific to LIST-001 screenshots; once LIST-002..008 land, generalizing it into a more flexible "demo data" CLI (parameterized count + axis distributions) would make every UI session's screenshots better than 0/0/0. Same wish-list item as Sessions 50/52/53/54.
+
+## Session 56 -- Alert List Regulator Filter
+Date: 2026-05-06
+
+### Feature Worked On
+- LIST-002 (priority 56): Alerts list page has a filter bar that filters alerts by regulator. Selecting "SEC" narrows the table to SEC alerts; clearing returns all alerts.
+- Status: PASSED
+
+### What Was Done
+- Extended src/app/alerts/page.tsx with a regulator filter bar above the table. The bar renders one chip per regulator (SEC / FINRA / CFPB / OCC) plus a "Clear" link that appears only when at least one chip is active.
+- Each chip is a `<Link>` whose href toggles inclusion of that regulator in a CSV `?regulator=` query param. Clicking SEC when the filter is empty -> ?regulator=SEC. Clicking SEC again when it's the only active chip -> drops the param entirely (toggle off).
+- Added parseRegulators(): parses `?regulator=SEC,FINRA` (or repeated query params) into a deduped array of validated RegulatoryOption members. Unknown values (e.g. "CIA") are silently dropped; an empty result returns null so callers can short-circuit the where-clause. This mirrors the API-005 endpoint's `parseCsvList` behavior on /api/alerts.
+- Added buildWhere() that produces `{ regulatoryItem: { regulator: { in: [...] } } }` when regulators is non-null. Threaded into the existing loadAlerts() so both the severity-rank-sort path and the prisma-orderBy path share one filter clause. No code duplication; one source of truth for the filter shape.
+- Refactored buildSortHref() -> buildAlertsHref() + buildSortHref() + buildRegulatorToggleHref(). The shared buildAlertsHref() takes (sortBy, sortOrder, regulators) and emits `/alerts?...`. Critical for sort+filter composition: clicking a column header now keeps the active regulators in the URL, and clicking Clear keeps the active sort.
+- Filter-bar markup carries `data-testid="alerts-filter-bar"` plus `data-filter-regulator="SEC,FINRA"` on the container so integration tests can assert filter state without parsing the URL. Each chip carries `data-testid="alerts-filter-regulator-{REG}"` and `data-active="true|false"`. The "Clear" link is `data-testid="alerts-filter-clear"`. Active chips also get `aria-pressed={true}` (the chip-as-link pattern doesn't have a native pressed semantic, but aria-pressed is the closest match for assistive tech).
+- Updated the empty-state branch: when at least one filter is active and the result set is empty, the message is "No alerts match the current filter." instead of the generic seed prompt. Avoids the "trigger an ingestion run" guidance being shown when the user has just narrowed the view.
+- Why URL search params over client-component state: same trade-off as LIST-001's sort -- deep-linking, no hydration round-trip, no client JS, free server-side data fetching. A user can paste /alerts?regulator=SEC,FINRA into Slack and it just works.
+- Why a CSV in a single param (rather than `?regulator=SEC&regulator=FINRA` repeated): matches the existing /api/alerts endpoint, which uses CSV. parseRegulators() also accepts the array form (when Next.js parses repeated keys) by joining first, then splitting -- the URL the page emits is always the canonical CSV form.
+- Why filter chips at the top (rather than per-column dropdowns inside the table header): per-column dropdowns are more compact but require interaction state (open/closed) that's harder to do server-rendered, and they hide the active filters until you re-open them. Top-bar chips show the available filter set + the active selections at a glance, with no JS, and scale uniformly to LIST-003..006 (severity / status / domain / date) which will sit alongside the regulator group.
+- Why deterministic CSV order (REGULATOR_OPTIONS order, not click order): a deterministic URL means that selecting SEC then FINRA produces the same href as selecting FINRA then SEC -- otherwise the back button history would have two visually-identical filtered states with different URLs.
+- Why unknown regulators are silently dropped (not 400): server components don't throw user-facing errors easily, and an unknown regulator from a copy-pasted URL or an external referrer should degrade gracefully ("show all"), not break the page.
+- Why the empty-state message changes when filtered: prevents the misleading "trigger an ingestion run from the dashboard" prompt from appearing when there's plenty of data, just none of the requested regulator. Confusing UX otherwise.
+- Why active chip uses bg-primary (matches sidebar's active-state highlight): visual consistency -- the same "active selection" treatment as LAYOUT-002's sidebar nav. A user already learned what bg-primary means.
+- Decision: did NOT add a "Filters" header / collapsible section. Spec asks for "filter bar"; one row of chips with a label "Regulator" is the minimum that meets the verification steps. LIST-003..006 will add more chip groups in the same row; they all live in the same flex-wrap container.
+- Decision: did NOT preserve scroll position across filter clicks. Server-rendered navigation resets scroll, which is fine for a short table; pagination (LIST-007) would benefit more from scroll preservation, and that's where to add it.
+- Decision: did NOT extract the filter bar into src/components/alerts/FilterBar.tsx. Same trade-off as the dashboard sections: single-use server-rendered markup with no client-side state, inlining keeps page.tsx readable. Extraction belongs to a future visual-polish session that touches multiple consumers.
+- Decision: did NOT add a count badge to each chip ("SEC (12)") -- spec doesn't require it; computing per-regulator counts would either need a second prisma query or a JS-side group-by that breaks the all-pages contract (LIST-007's pagination would have to choose: count over current page or all pages).
+- Authored __tests__/integration/alerts-page-list002.test.ts (6 tests, ~280 lines). Seeds 6 fixtures spanning all four regulators (SEC x2, FINRA x2, OCC x1, CFPB x1) and asserts: (1) bar renders with one chip per regulator + no Clear when no filter active; (2) ?regulator=SEC narrows to SEC seeded ids only and surfaces the Clear link; (3) ?regulator=SEC,FINRA renders the union; (4) Clear link href has no `regulator=` query param and the unfiltered result returns all seeded ids; (5) sort + filter compose: ?sortBy=severity&regulator=SEC keeps both axes, the Clear link preserves sortBy=severity, the Severity sort link preserves regulator=SEC; (6) invalid regulator values (?regulator=CIA) are silently dropped. afterAll deletes only seeded ids.
+
+### Files Modified / Created
+- src/app/alerts/page.tsx (added REGULATOR_OPTIONS const + RegulatorOption type, parseRegulators(), buildWhere(), buildAlertsHref()/buildRegulatorToggleHref() helpers, regulators threaded into loadAlerts() and buildSortHref(), filter bar render with chip group + Clear link, filter-aware empty-state message; +90 lines net)
+- __tests__/integration/alerts-page-list002.test.ts (new, 6 tests, ~280 lines)
+- specs/phase1/screenshots/LIST-002-default.png (new full-page Playwright screenshot showing the filter bar above the 5-row table with no chip active)
+- specs/phase1/screenshots/LIST-002-sec.png (new full-page Playwright screenshot showing the table after clicking SEC -- 2 SEC rows, SEC chip filled black, "Clear" link visible)
+- specs/phase1/feature_list.json (LIST-002 passes -> true)
+
+### Testing
+- Verified all 5 LIST-002 acceptance steps:
+  1. Navigate to http://localhost:3000/alerts: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector".
+  2. Locate the filter controls: Playwright accessibility snapshot shows the new "Regulator" group with four `<a>` chips (SEC / FINRA / CFPB / OCC), each with a /alerts?...&regulator=... href. data-testid="alerts-filter-bar" present.
+  3. Select regulator filter for 'SEC': clicked the SEC chip in Playwright; URL went to /alerts?sortBy=date&sortOrder=desc&regulator=SEC; the SEC chip now has data-active="true" and the FINRA/CFPB/OCC chips have data-active="false".
+  4. Verify only SEC alerts are shown: DOM eval after the click returned `regulators: ["SEC", "SEC"]` for 2 rows -- exactly the seeded SEC count. Integration test additionally asserts the rendered alert ids match the seeded SEC subset for the 6-fixture test set.
+  5. Clear the filter and verify all alerts return: clicked the "Clear" link in Playwright; URL went to /alerts?sortBy=date&sortOrder=desc; DOM eval returned all 5 seeded regulators (SEC, FINRA, CFPB, OCC, SEC) and the Clear link is no longer rendered.
+- Test suite results: `npm test` -> 50 suites / 334 tests passing (was 49 / 328; +1 suite / +6 tests for LIST-002). Stable at ~57s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: dashboard root -> 200 with all data-testid markers (severity-cards, regulator-cards, domain-cards, recent-runs-table) intact; /alerts -> 200 with the new alerts-filter-bar; /api/alerts -> 200; /api/dashboard/stats -> 200. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..005, LIST-001 all unchanged.
+- Live Playwright verification:
+  - Seeded 5 demo alerts (manual seed script -- the existing scripts/seed-list001-demo.ts produces 2 SEC + 1 FINRA + 1 CFPB + 1 OCC, perfect for the LIST-002 verification too).
+  - Navigated to http://localhost:3000/alerts, snapshot shows the new filter bar with the four chips above the 5-row table.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-002-default.png.
+  - Clicked SEC chip; URL became /alerts?sortBy=date&sortOrder=desc&regulator=SEC; table re-rendered with the 2 SEC rows only; SEC chip now filled black (active); "Clear" link appeared.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-002-sec.png.
+  - Clicked Clear; URL became /alerts?sortBy=date&sortOrder=desc; all 5 rows returned (2 SEC + FINRA + CFPB + OCC, in date-desc order).
+  - Console: 0 errors, 0 warnings.
+  - Wiped demo data via scripts/wipe-list001-demo.ts; navigated back to /alerts; the empty-state Card with `data-testid="alerts-empty"` rendered the unfiltered message ("No alerts to show. Trigger an ingestion run from the dashboard.").
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-55: `./scripts/dev-up.sh` was needed once after the initial src/app/alerts/page.tsx edit; the new data-testid="alerts-filter-bar" markers weren't appearing on the first GET /alerts after the edit. Same recurring issue, same documented workaround. Did NOT need to clear .next/dev/types this session.
+- The integration test is "live-UI" (depends on the dev server being up on :3000). Same caveat as DASH-001..005, LIST-001.
+- The screenshots show the same Next.js dev-tools "N" overlay near the bottom-left as Session 55's screenshots; production builds don't render it.
+- The `aria-pressed` attribute on chip links is technically a button-only ARIA state; assistive tech may or may not honor it on `<a>`. The trade-off: keeping the URL-driven navigation pattern (no client JS) means using <a>, not <button type="button">. If a future a11y pass calls this out, swapping to a `<form>` with hidden inputs + a submit button would be the right move; for now the visual `data-active` indicator + the underline-on-hover Clear link give sighted and unsighted users the same affordance.
+- Per-regulator count badges (e.g., "SEC (12)") were skipped per the design decision above. If product asks for them, the natural place is a `prisma.alert.groupBy({ by: ['regulatoryItem.regulator'], _count: { _all: true } })` second query parallelized with the main findMany via Promise.all.
+- The seed-list001-demo.ts fixture list (2 SEC, 1 FINRA, 1 CFPB, 1 OCC) was authored for LIST-001 and happens to give the LIST-002 verification its 2-row "SEC filter" subset. If a future LIST-003..006 verification needs heavier per-axis variety, generalizing the seeder into a parameterized CLI (count + axis distribution) is still the wished-for follow-up.
+
+### Next Priorities
+- LIST-003 (priority 57): severity filter (`?severity=high,medium,low`). Same shape as LIST-002 -- another chip group in the existing alerts-filter-bar. The /api/alerts endpoint already accepts `?severity=...`, so it's pure UI. The buildAlertsHref() helper already takes a generic shape; extending it for severity is a one-line addition.
+- LIST-004 (priority 58): status filter (`?status=open,escalated,...`).
+- LIST-005 (priority 59): domain filter.
+- LIST-006 (priority 60): date range (?dateFrom=&dateTo=) -- two date inputs (different shape).
+- LIST-007: pagination (?page=) -- "Page X of Y" + prev/next links.
+- LIST-008: row click-through to /alerts/[id].
+- DETAIL-001..006: alert detail page session.
+- Demo-data CLI (still wished-for): parameterized seeder so LIST-003..006 screenshots can show heavier per-axis variety than the LIST-001 fixture.
