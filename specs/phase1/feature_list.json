@@ -952,7 +952,7 @@
         "Verify each run shows: timestamp, trigger type (scheduled/manual), status, items processed, items flagged, items suppressed",
         "Verify runs are ordered most recent first"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INGLOG-002",
