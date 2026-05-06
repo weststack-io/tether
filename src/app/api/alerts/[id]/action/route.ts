@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
 
 const ACCEPT = "accept";
+const DISMISS = "dismiss";
 
-// API-007: accept path. Other actions (dismiss/escalate/snooze) reject as 400
-// until their respective sessions land.
+// API-007 (accept) + API-008 (dismiss). Other actions (escalate/snooze) reject
+// as 400 until their respective sessions land.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -21,7 +22,8 @@ export async function POST(
     );
   }
 
-  const action = (body as { action?: unknown } | null)?.action;
+  const payload = (body ?? {}) as Record<string, unknown>;
+  const action = payload.action;
   if (typeof action !== "string") {
     return NextResponse.json(
       { error: "Missing 'action' in request body" },
@@ -29,11 +31,23 @@ export async function POST(
     );
   }
 
-  if (action !== ACCEPT) {
+  if (action !== ACCEPT && action !== DISMISS) {
     return NextResponse.json(
       { error: `Unsupported action: ${action}` },
       { status: 400 },
     );
+  }
+
+  let reason: string | null = null;
+  if (action === DISMISS) {
+    const rawReason = payload.reason;
+    if (typeof rawReason !== "string" || rawReason.trim().length === 0) {
+      return NextResponse.json(
+        { error: "Missing 'reason' for dismiss action" },
+        { status: 400 },
+      );
+    }
+    reason = rawReason.trim();
   }
 
   try {
@@ -45,21 +59,31 @@ export async function POST(
       );
     }
 
+    const nextStatus = action === ACCEPT ? "accepted" : "dismissed";
     const beforeState = JSON.stringify({ status: existing.status });
-    const afterState = JSON.stringify({ status: "accepted" });
+    const afterState =
+      action === DISMISS
+        ? JSON.stringify({ status: nextStatus, dismissReason: reason })
+        : JSON.stringify({ status: nextStatus });
+
+    const updateData =
+      action === DISMISS
+        ? { status: nextStatus, dismissReason: reason }
+        : { status: nextStatus };
 
     const [updated] = await prisma.$transaction([
       prisma.alert.update({
         where: { id },
-        data: { status: "accepted" },
+        data: updateData,
       }),
       prisma.auditEntry.create({
         data: {
           alertId: id,
           actor: "reviewer",
-          action: "accepted",
+          action: nextStatus,
           beforeState,
           afterState,
+          note: action === DISMISS ? reason : null,
         },
       }),
     ]);

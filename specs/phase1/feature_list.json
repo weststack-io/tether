@@ -587,7 +587,7 @@
         "Verify an AuditEntry was created with the reason in the note field",
         "Send POST without reason and verify it returns a validation error"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-009",
