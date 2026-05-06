@@ -666,7 +666,7 @@
         "Verify each card shows the correct count matching the database",
         "Verify high card uses red styling, medium uses amber, low uses blue"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DASH-002",
