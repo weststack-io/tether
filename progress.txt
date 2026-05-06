@@ -2299,3 +2299,62 @@ Date: 2026-05-06
 - LIST-001..008: alerts list UI session.
 - DETAIL-001..006: alert-detail UI session.
 - Potential infra: a "demo data seeder" CLI / API route so screenshots and manual demo runs aren't all 0/0/0. The Session 50 and 52 notes have both wished for one.
+
+## Session 53 -- Dashboard Alerts-by-Policy-Domain Cards
+Date: 2026-05-06
+
+### Feature Worked On
+- DASH-004 (priority 53): dashboard alerts-by-policy-domain breakdown showing counts for all ten policy domains (BSA/AML, Complaint Handling, Fair Lending, Regulation E, Regulation Z, Vendor Management, Information Security, Customer Identification Program, Overdraft, Marketing). Renders as a third card section below the existing "By regulator" group, using human-readable labels per the spec.
+- Status: PASSED
+
+### What Was Done
+- Extended src/app/page.tsx with `getOpenAlertDomainCounts()` that queries `prisma.alert.findMany({ where: { status: 'open' }, select: { policyChunk: { select: { policyDocument: { select: { domain: true } } } } } })` and aggregates client-side into a Record keyed by all 10 DomainKey values, all initialized to 0. Two-level relation traversal (Alert -> policyChunk -> policyDocument.domain) is the only path from Alert to domain — no direct field exists.
+- Added a third Promise.all leg in `DashboardPage()` so the three count queries (severity, regulator, domain) all run in parallel rather than serialized.
+- Added `DOMAIN_CARDS` array with the human-readable label map: bsa_aml -> "BSA/AML", complaint_handling -> "Complaint Handling", fair_lending -> "Fair Lending", reg_e -> "Regulation E", reg_z -> "Regulation Z", vendor_management -> "Vendor Management", info_security -> "Information Security", cip -> "Customer Identification Program", overdraft -> "Overdraft", marketing -> "Marketing". Labels match the canonical spelling used in data/policies/* filenames and the policy markdown front-matter.
+- Added a `DOMAIN_KEYS` ReadonlySet derived from DOMAIN_CARDS so the count aggregator can validate domain values from the DB before incrementing — silently drops unknown domains (mirrors how the /api/dashboard/stats endpoint already handles unmapped values, and protects the dashboard against a stray PolicyDocument with a domain typo).
+- Rendered a `<section>` with heading "By policy domain" + sub-text "Open alerts grouped by the policy domain of the matched chunk" and a 10-card grid below the regulator section. Each Card has `data-domain="{KEY}"` and the count `<div>` has `data-testid="domain-count-{KEY}"`, so the integration test can scrape values from the rendered HTML without parsing the visual DOM.
+- Why `grid-cols-2 sm:grid-cols-3 lg:grid-cols-5` (vs. regulator's `grid-cols-2 sm:grid-cols-4`): with 10 cards a 4-col layout produces a 4+4+2 grid that visually orphans the last row; 5-col at lg yields 5+5 (clean two rows), 3-col at sm yields 3+3+3+1 (acceptable trade-off — mobile users have plenty of vertical space and reading 10 cards top-to-bottom is fine), and 2-col on the smallest viewport keeps labels like "Customer Identification Program" from wrapping awkwardly.
+- Why `text-3xl` on the count (vs. `text-4xl` on severity/regulator): the domain cards are denser (10 vs. 3-4), so the slightly smaller numeral keeps each card's overall height compatible with the grid without forcing the page to scroll on a typical laptop viewport.
+- Why `CardTitle className="text-sm"`: the default CardTitle size is too large for "Customer Identification Program" — it wraps to two lines and pushes the count down inconsistently across cards. text-sm keeps each title on one or two compact lines and lets the count be the dominant visual element on the card.
+- Why open-only (matching DASH-001 and DASH-003): the dashboard is a "what's currently pending review" view. Mixing in dismissed/accepted alerts would make the domain breakdown reflect historical activity rather than current load.
+- Why a direct prisma call rather than going through /api/dashboard/stats: same trade-off as DASH-001 and DASH-003 — the /api/dashboard/stats endpoint counts ALL alerts by domain (its API contract is locked by the Session 38-era API-002 tests), while DASH-004 wants open-only. A future refactor could expose `?status=open` on the stats endpoint or extract `getOpenAlertCountsByDomain()` into src/lib/, but that's out of scope for DASH-004.
+- Why all 10 keys initialized to 0 (vs. dynamic from rows): guarantees every spec-defined domain gets a card even when the DB has no alerts in that domain, which matches the screenshot expectation ("verify domain names are human-readable" implies all 10 are visible). It also makes the rendered grid stable across DB states — you don't get a 7-card grid in dev and a 10-card grid in prod just because reg_e/info_security/marketing happen to be empty.
+- Authored __tests__/integration/dashboard-page-dash004.test.ts (1 test, ~190 lines) modeled on the DASH-003 harness: captures baseline counts via fetch('/'), seeds 14 open alerts with deliberately asymmetric per-domain counts (bsa_aml:3, complaint_handling:1, fair_lending:2, reg_e:0, reg_z:1, vendor_management:4, info_security:0, cip:2, overdraft:1, marketing:0) — each through a full Run->Policy->Chunk->Item->Alert dependency chain — re-fetches the dashboard HTML, parses the domain-count testid values for all 10 domains, and asserts each equals baseline+seeded. Asymmetric counts including zero deltas catch hard-coding, mis-mapping, and any "skip empty domains" bug. afterAll deletes everything seeded by id, in dependency order.
+- Decision: did NOT add a "Total" card or "Other" bucket. The DOMAIN_KEYS set covers the 10 spec-defined domains; an unknown domain value is silently dropped, which mirrors the existing /api/dashboard/stats and /api/alerts behavior.
+- Decision: did NOT add icons or color-coding for the domain cards. Same reasoning as DASH-003's regulator cards: there's no spec-mandated visual hierarchy, and arbitrary colors would imply a ranking that doesn't exist (no domain is "more severe" than another). Neutral cards keep the visual emphasis on the severity row.
+- Decision: did NOT add click-through from the domain cards to /alerts?domain=X. The DASH-004 spec only requires display; click-through belongs to a follow-up feature (same scoping decision as DASH-001/DASH-003).
+- Decision: did NOT extract the label map into a shared module (e.g., src/lib/domain-labels.ts). The labels are only used in this file today; if /alerts ends up needing them too, that's the right time to extract — premature extraction would force a circular-import shape the schema doesn't currently warrant.
+
+### Files Modified / Created
+- src/app/page.tsx (added DomainKey type, DOMAIN_CARDS, DOMAIN_KEYS, getOpenAlertDomainCounts(), the Promise.all leg, and the 10-card "By policy domain" grid section; +75 lines net)
+- __tests__/integration/dashboard-page-dash004.test.ts (new, 1 test, ~190 lines)
+- specs/phase1/screenshots/DASH-004.png (new full-page Playwright screenshot showing severity / regulator / policy-domain card groups stacked top-to-bottom)
+- specs/phase1/feature_list.json (DASH-004 passes -> true)
+
+### Testing
+- Verified all 4 DASH-004 acceptance steps:
+  1. Navigate to http://localhost:3000: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector".
+  2. Card group shows alert counts broken down by policy domain: Playwright accessibility snapshot shows the 10 cards under the "By policy domain" heading; integration test grep'd `data-testid="domain-count-{DOMAIN}"` literals for all 10 domains.
+  3. Domain names are human-readable: snapshot confirms each card shows the human label (e.g., "BSA/AML", "Customer Identification Program", "Regulation E", "Information Security") rather than the snake_case keys; integration test asserts each HUMAN_LABELS[dom] string is present in the rendered HTML.
+  4. Counts match the database: with the DB at 0 open alerts, all 10 cards display "0" (verified via Playwright snapshot AND a cross-check fetch('/api/dashboard/stats') -> alertsByDomain: {} (empty record because no alerts exist), totalOpen: 0). With 14 seeded open alerts asymmetrically distributed across domains, the integration test asserts each card's count goes from baseline to baseline+N for every domain — including zero-delta cases for reg_e/info_security/marketing, which would catch a "skip empty domains" bug.
+- Test suite results: `npm test` -> 47 suites / 321 tests passing (was 46 / 320; +1 suite / +1 test for DASH-004). Stable at ~52s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: dashboard root -> 200 with all data-severity, data-regulator, AND data-domain attributes (10 unique domain keys); /api/dashboard/stats -> 200. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..003 all unchanged.
+- Live Playwright verification:
+  - Navigated to http://localhost:3000/, snapshot shows the new "By policy domain" section with 10 labeled cards below the existing severity and regulator card groups.
+  - Evaluated `document.querySelectorAll('[data-domain]')` -> all 10 keys present in card-order [bsa_aml, complaint_handling, fair_lending, reg_e, reg_z, vendor_management, info_security, cip, overdraft, marketing] with the matching human labels.
+  - Cross-checked DOM counts (all 0) vs. /api/dashboard/stats.alertsByDomain ({} when no alerts exist) -> consistent with empty DB.
+  - Saved full-page screenshot to specs/phase1/screenshots/DASH-004.png.
+  - Console: 0 errors, 0 warnings.
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-52: Turbopack served a stale page.tsx response (no `data-domain` attributes) on the first GET / after editing src/app/page.tsx. Workaround: `./scripts/dev-up.sh` to restart cleanly. Less aggressive than Session 52's `rm -rf .next` because the bundle wasn't fully wedged this time. Same recurring issue, same documented workaround.
+- The dashboard page now makes three separate prisma queries (severity / regulator / domain). They run in parallel via Promise.all so wall-clock is near-identical to a single call, but the network/DB cost is three round-trips. A future hardening pass could collapse them into one query that selects {severity, regulatoryItem:{regulator}, policyChunk:{policyDocument:{domain}}} and aggregates three times in JS, but the readability and per-aggregator-clarity cost isn't worth it for a dashboard query.
+- The integration test is "live-UI" (depends on the dev server being up on :3000). Same caveat as DASH-001/DASH-002/DASH-003 — the loop driver always has the server running, but a CI run without the dev server would fail this suite. Acceptable for the demo.
+- The screenshot shows 0 across all 10 cards because the DB is empty. Same long-running gripe as Sessions 50/52 — the integration test covers the dynamic non-zero case (asymmetric deltas across all 10 keys), so the contract is locked. A follow-up "demo-data" seeder feature would make screenshots more visually compelling.
+- The 5-col grid at lg with 10 cards yields a clean 5+5 layout, but on viewports wider than 2xl (e.g., ultra-wide monitors) the cards stretch quite tall vertically. Not a regression — the existing severity/regulator cards have the same behavior — and a max-w container on the page would belong to a future visual-polish pass that should also cover the alerts list and detail pages.
+
+### Next Priorities
+- DASH-005 (priority 54): recent ingestion activity (last 5 runs). /api/dashboard/stats already returns `recentIngestion`, and /api/ingestion/log returns full pagination -- DASH-005 is mostly UI for already-served data. Show timestamp / trigger / status / itemsProcessed / itemsFlagged.
+- LIST-001..008: alerts list UI session. LIST-001 is the table shell with sort; LIST-002..006 are the per-field filters (regulator, severity, status, domain, date range); LIST-007..008 cover pagination and "view detail" link. The /api/alerts endpoint (API-003..006) is fully built and tested, so the LIST work is pure UI consumption.
+- DETAIL-001..006: alert-detail UI session.
+- Potential infra: a "demo data seeder" CLI / API route so screenshots and manual demo runs aren't all 0/0/0. Sessions 50/52/53 have all wished for one.
