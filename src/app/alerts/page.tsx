@@ -170,6 +170,41 @@ function parseDomains(
   return picked.size > 0 ? [...picked] : null;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Parses a YYYY-MM-DD query value into the same string for echoing back into
+// the form. Anything that doesn't match the strict date-only shape is dropped
+// so the form always receives well-formed values. Full ISO timestamps are NOT
+// accepted here -- the input control is `type="date"` so the wire format is
+// always YYYY-MM-DD.
+function parseDateInput(raw: string | string[] | undefined): string | null {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (!v) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return v;
+}
+
+// Builds the createdAt where-fragment from a parsed range. Mirrors the API
+// route's parseDateBound semantics: dateFrom is `gte` at midnight UTC of the
+// named day; dateTo is `lt` at midnight UTC of the day AFTER the named day,
+// so the bound is inclusive of dateTo's named day.
+function buildDateRangeWhere(
+  dateFrom: string | null,
+  dateTo: string | null,
+): Record<string, Date> | null {
+  if (!dateFrom && !dateTo) return null;
+  const createdAt: Record<string, Date> = {};
+  if (dateFrom) {
+    createdAt.gte = new Date(dateFrom);
+  }
+  if (dateTo) {
+    createdAt.lt = new Date(new Date(dateTo).getTime() + DAY_MS);
+  }
+  return createdAt;
+}
+
 function buildPrismaOrderBy(
   sortBy: SortField,
   sortOrder: SortOrder,
@@ -218,6 +253,8 @@ function buildWhere(
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
   domains: DomainOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (regulators) {
@@ -232,6 +269,10 @@ function buildWhere(
   if (domains) {
     where.policyChunk = { policyDocument: { domain: { in: domains } } };
   }
+  const range = buildDateRangeWhere(dateFrom, dateTo);
+  if (range) {
+    where.createdAt = range;
+  }
   return where;
 }
 
@@ -242,8 +283,17 @@ async function loadAlerts(
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
   domains: DomainOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): Promise<AlertRow[]> {
-  const where = buildWhere(regulators, severities, statuses, domains);
+  const where = buildWhere(
+    regulators,
+    severities,
+    statuses,
+    domains,
+    dateFrom,
+    dateTo,
+  );
   if (sortBy === "severity") {
     // Severity uses a custom rank (high < medium < low) that Prisma's typed
     // orderBy can't express, so fetch then sort in JS. Mirrors the API-005
@@ -280,6 +330,8 @@ function buildAlertsHref(
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
   domains: DomainOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): string {
   const params = new URLSearchParams();
   params.set("sortBy", sortBy);
@@ -296,6 +348,12 @@ function buildAlertsHref(
   if (domains && domains.length > 0) {
     params.set("domain", domains.join(","));
   }
+  if (dateFrom) {
+    params.set("dateFrom", dateFrom);
+  }
+  if (dateTo) {
+    params.set("dateTo", dateTo);
+  }
   return `/alerts?${params.toString()}`;
 }
 
@@ -307,6 +365,8 @@ function buildSortHref(
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
   domains: DomainOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): string {
   // Clicking the active column toggles direction. Clicking a different column
   // selects it with the column's natural default direction (desc for date /
@@ -328,6 +388,8 @@ function buildSortHref(
     severities,
     statuses,
     domains,
+    dateFrom,
+    dateTo,
   );
 }
 
@@ -339,6 +401,8 @@ function buildRegulatorToggleHref(
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
   domains: DomainOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): string {
   // Toggle membership of `reg` in the active filter set, preserving sort and
   // the other filters. Order within the resulting CSV mirrors
@@ -355,6 +419,8 @@ function buildRegulatorToggleHref(
     severities,
     statuses,
     domains,
+    dateFrom,
+    dateTo,
   );
 }
 
@@ -366,6 +432,8 @@ function buildSeverityToggleHref(
   regulators: RegulatorOption[] | null,
   statuses: StatusOption[] | null,
   domains: DomainOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): string {
   // Toggle membership of `sev` in the active severity filter set, preserving
   // sort and the other filters. CSV order mirrors SEVERITY_OPTIONS so the URL
@@ -381,6 +449,8 @@ function buildSeverityToggleHref(
     next.length > 0 ? next : null,
     statuses,
     domains,
+    dateFrom,
+    dateTo,
   );
 }
 
@@ -392,6 +462,8 @@ function buildStatusToggleHref(
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
   domains: DomainOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): string {
   // Toggle membership of `st` in the active status filter set, preserving
   // sort and the other filters. CSV order mirrors STATUS_OPTIONS so the URL
@@ -407,6 +479,8 @@ function buildStatusToggleHref(
     severities,
     next.length > 0 ? next : null,
     domains,
+    dateFrom,
+    dateTo,
   );
 }
 
@@ -418,6 +492,8 @@ function buildDomainToggleHref(
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
   statuses: StatusOption[] | null,
+  dateFrom: string | null,
+  dateTo: string | null,
 ): string {
   // Toggle membership of `dom` in the active domain filter set, preserving
   // sort and the other filters. CSV order mirrors DOMAIN_OPTIONS so the URL
@@ -433,6 +509,8 @@ function buildDomainToggleHref(
     severities,
     statuses,
     next.length > 0 ? next : null,
+    dateFrom,
+    dateTo,
   );
 }
 
@@ -457,6 +535,8 @@ export default async function AlertsPage({
   const severities = parseSeverities(params.severity);
   const statuses = parseStatuses(params.status);
   const domains = parseDomains(params.domain);
+  const dateFrom = parseDateInput(params.dateFrom);
+  const dateTo = parseDateInput(params.dateTo);
   const alerts = await loadAlerts(
     sortBy,
     sortOrder,
@@ -464,16 +544,20 @@ export default async function AlertsPage({
     severities,
     statuses,
     domains,
+    dateFrom,
+    dateTo,
   );
   const hasRegulatorFilter = regulators !== null && regulators.length > 0;
   const hasSeverityFilter = severities !== null && severities.length > 0;
   const hasStatusFilter = statuses !== null && statuses.length > 0;
   const hasDomainFilter = domains !== null && domains.length > 0;
+  const hasDateRangeFilter = dateFrom !== null || dateTo !== null;
   const hasActiveFilter =
     hasRegulatorFilter ||
     hasSeverityFilter ||
     hasStatusFilter ||
-    hasDomainFilter;
+    hasDomainFilter ||
+    hasDateRangeFilter;
 
   return (
     <div className="space-y-6">
@@ -491,6 +575,8 @@ export default async function AlertsPage({
         data-filter-severity={severities ? severities.join(",") : ""}
         data-filter-status={statuses ? statuses.join(",") : ""}
         data-filter-domain={domains ? domains.join(",") : ""}
+        data-filter-date-from={dateFrom ?? ""}
+        data-filter-date-to={dateTo ?? ""}
       >
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
           Regulator
@@ -508,6 +594,8 @@ export default async function AlertsPage({
                 severities,
                 statuses,
                 domains,
+                dateFrom,
+                dateTo,
               )}
               data-testid={`alerts-filter-regulator-${reg}`}
               data-active={isActive ? "true" : "false"}
@@ -538,6 +626,8 @@ export default async function AlertsPage({
                 regulators,
                 statuses,
                 domains,
+                dateFrom,
+                dateTo,
               )}
               data-testid={`alerts-filter-severity-${sev}`}
               data-active={isActive ? "true" : "false"}
@@ -568,6 +658,8 @@ export default async function AlertsPage({
                 regulators,
                 severities,
                 domains,
+                dateFrom,
+                dateTo,
               )}
               data-testid={`alerts-filter-status-${st}`}
               data-active={isActive ? "true" : "false"}
@@ -598,6 +690,8 @@ export default async function AlertsPage({
                 regulators,
                 severities,
                 statuses,
+                dateFrom,
+                dateTo,
               )}
               data-testid={`alerts-filter-domain-${dom}`}
               data-active={isActive ? "true" : "false"}
@@ -614,7 +708,16 @@ export default async function AlertsPage({
         })}
         {hasActiveFilter && (
           <Link
-            href={buildAlertsHref(sortBy, sortOrder, null, null, null, null)}
+            href={buildAlertsHref(
+              sortBy,
+              sortOrder,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+            )}
             data-testid="alerts-filter-clear"
             className="ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
@@ -622,6 +725,68 @@ export default async function AlertsPage({
           </Link>
         )}
       </div>
+
+      <form
+        method="get"
+        action="/alerts"
+        className="flex flex-wrap items-center gap-2"
+        data-testid="alerts-filter-date-range"
+        data-date-from={dateFrom ?? ""}
+        data-date-to={dateTo ?? ""}
+      >
+        <input type="hidden" name="sortBy" value={sortBy} />
+        <input type="hidden" name="sortOrder" value={sortOrder} />
+        {regulators && regulators.length > 0 && (
+          <input type="hidden" name="regulator" value={regulators.join(",")} />
+        )}
+        {severities && severities.length > 0 && (
+          <input type="hidden" name="severity" value={severities.join(",")} />
+        )}
+        {statuses && statuses.length > 0 && (
+          <input type="hidden" name="status" value={statuses.join(",")} />
+        )}
+        {domains && domains.length > 0 && (
+          <input type="hidden" name="domain" value={domains.join(",")} />
+        )}
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+          Date Range
+        </span>
+        <label
+          className="flex items-center gap-1 text-xs text-muted-foreground"
+          htmlFor="alerts-filter-date-from"
+        >
+          From
+          <input
+            id="alerts-filter-date-from"
+            type="date"
+            name="dateFrom"
+            defaultValue={dateFrom ?? ""}
+            data-testid="alerts-filter-date-from"
+            className="rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </label>
+        <label
+          className="flex items-center gap-1 text-xs text-muted-foreground"
+          htmlFor="alerts-filter-date-to"
+        >
+          To
+          <input
+            id="alerts-filter-date-to"
+            type="date"
+            name="dateTo"
+            defaultValue={dateTo ?? ""}
+            data-testid="alerts-filter-date-to"
+            className="rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </label>
+        <button
+          type="submit"
+          data-testid="alerts-filter-date-apply"
+          className="inline-flex items-center rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground ring-1 ring-inset ring-primary hover:bg-primary/90"
+        >
+          Apply
+        </button>
+      </form>
 
       <Card>
         <CardContent className="p-0">
@@ -668,6 +833,8 @@ export default async function AlertsPage({
                               severities,
                               statuses,
                               domains,
+                              dateFrom,
+                              dateTo,
                             )}
                             className="inline-flex items-center gap-1 hover:text-foreground"
                             data-testid={`alerts-sort-${col.key}`}
