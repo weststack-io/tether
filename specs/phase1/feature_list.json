@@ -813,7 +813,7 @@
         "Click next page and verify different alerts are shown",
         "Verify page numbers and total count are displayed"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LIST-008",

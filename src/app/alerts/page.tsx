@@ -170,6 +170,20 @@ function parseDomains(
   return picked.size > 0 ? [...picked] : null;
 }
 
+const PAGE_SIZE = 25;
+
+// Parse `?page=N` into a 1-indexed positive integer. Anything malformed or
+// less than 1 collapses to page 1 (the canonical default). The caller is
+// responsible for clamping above totalPages — the empty-state copy already
+// handles the over-shoot case correctly.
+function parsePage(raw: string | string[] | undefined): number {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (!v) return 1;
+  const n = Number.parseInt(v, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return n;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Parses a YYYY-MM-DD query value into the same string for echoing back into
@@ -285,7 +299,9 @@ async function loadAlerts(
   domains: DomainOption[] | null,
   dateFrom: string | null,
   dateTo: string | null,
-): Promise<AlertRow[]> {
+  page: number,
+  pageSize: number,
+): Promise<{ alerts: AlertRow[]; total: number }> {
   const where = buildWhere(
     regulators,
     severities,
@@ -294,6 +310,7 @@ async function loadAlerts(
     dateFrom,
     dateTo,
   );
+  const skip = (page - 1) * pageSize;
   if (sortBy === "severity") {
     // Severity uses a custom rank (high < medium < low) that Prisma's typed
     // orderBy can't express, so fetch then sort in JS. Mirrors the API-005
@@ -302,7 +319,7 @@ async function loadAlerts(
       where,
       include: ALERT_INCLUDE,
     })) as AlertRow[];
-    return [...rows].sort((a, b) => {
+    const sorted = [...rows].sort((a, b) => {
       const rankA = SEVERITY_RANK[a.severity] ?? 999;
       const rankB = SEVERITY_RANK[b.severity] ?? 999;
       if (rankA !== rankB) {
@@ -310,13 +327,23 @@ async function loadAlerts(
       }
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
+    return {
+      alerts: sorted.slice(skip, skip + pageSize),
+      total: sorted.length,
+    };
   }
   const orderBy = buildPrismaOrderBy(sortBy, sortOrder)!;
-  return (await prisma.alert.findMany({
-    where,
-    orderBy,
-    include: ALERT_INCLUDE,
-  })) as AlertRow[];
+  const [total, alerts] = await Promise.all([
+    prisma.alert.count({ where }),
+    prisma.alert.findMany({
+      where,
+      orderBy,
+      include: ALERT_INCLUDE,
+      skip,
+      take: pageSize,
+    }) as Promise<AlertRow[]>,
+  ]);
+  return { alerts, total };
 }
 
 function formatDateDetected(d: Date): string {
@@ -332,6 +359,7 @@ function buildAlertsHref(
   domains: DomainOption[] | null,
   dateFrom: string | null,
   dateTo: string | null,
+  page: number = 1,
 ): string {
   const params = new URLSearchParams();
   params.set("sortBy", sortBy);
@@ -353,6 +381,13 @@ function buildAlertsHref(
   }
   if (dateTo) {
     params.set("dateTo", dateTo);
+  }
+  // page=1 is the canonical default and omitted for cleaner URLs. The
+  // chip-toggle and column-sort hrefs intentionally never thread page through
+  // -- changing a filter or sort resets to page 1, since otherwise the user
+  // could land on page 5 of a 2-page result set.
+  if (page > 1) {
+    params.set("page", String(page));
   }
   return `/alerts?${params.toString()}`;
 }
@@ -537,7 +572,8 @@ export default async function AlertsPage({
   const domains = parseDomains(params.domain);
   const dateFrom = parseDateInput(params.dateFrom);
   const dateTo = parseDateInput(params.dateTo);
-  const alerts = await loadAlerts(
+  const requestedPage = parsePage(params.page);
+  const { alerts, total } = await loadAlerts(
     sortBy,
     sortOrder,
     regulators,
@@ -546,7 +582,15 @@ export default async function AlertsPage({
     domains,
     dateFrom,
     dateTo,
+    requestedPage,
+    PAGE_SIZE,
   );
+  const totalPages = total === 0 ? 0 : Math.ceil(total / PAGE_SIZE);
+  // The empty-state copy already covers over-shoot, so we still render the
+  // requested page even if it's past totalPages -- the only downstream effect
+  // is that the pagination controls clamp the highlighted page to a sensible
+  // value.
+  const currentPage = totalPages === 0 ? 1 : Math.min(requestedPage, totalPages);
   const hasRegulatorFilter = regulators !== null && regulators.length > 0;
   const hasSeverityFilter = severities !== null && severities.length > 0;
   const hasStatusFilter = statuses !== null && statuses.length > 0;
@@ -558,6 +602,20 @@ export default async function AlertsPage({
     hasStatusFilter ||
     hasDomainFilter ||
     hasDateRangeFilter;
+  const buildPageHref = (page: number): string =>
+    buildAlertsHref(
+      sortBy,
+      sortOrder,
+      regulators,
+      severities,
+      statuses,
+      domains,
+      dateFrom,
+      dateTo,
+      page,
+    );
+  const firstRowIndex = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const lastRowIndex = Math.min(currentPage * PAGE_SIZE, total);
 
   return (
     <div className="space-y-6">
@@ -926,6 +984,91 @@ export default async function AlertsPage({
           )}
         </CardContent>
       </Card>
+
+      {total > 0 && (
+        <nav
+          className="flex flex-wrap items-center justify-between gap-3 text-sm"
+          aria-label="Alerts pagination"
+          data-testid="alerts-pagination"
+          data-page={currentPage}
+          data-total-pages={totalPages}
+          data-total={total}
+          data-page-size={PAGE_SIZE}
+        >
+          <div
+            className="text-xs text-muted-foreground"
+            data-testid="alerts-pagination-summary"
+          >
+            Showing{" "}
+            <span className="font-medium text-foreground">{firstRowIndex}</span>
+            {"–"}
+            <span className="font-medium text-foreground">{lastRowIndex}</span>{" "}
+            of{" "}
+            <span className="font-medium text-foreground">{total}</span> alert
+            {total === 1 ? "" : "s"} · Page{" "}
+            <span className="font-medium text-foreground">{currentPage}</span>{" "}
+            of{" "}
+            <span className="font-medium text-foreground">{totalPages}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {currentPage > 1 ? (
+              <Link
+                href={buildPageHref(currentPage - 1)}
+                data-testid="alerts-pagination-prev"
+                className="inline-flex items-center rounded-md px-3 py-1 text-xs font-medium ring-1 ring-inset ring-border hover:bg-accent hover:text-accent-foreground"
+                rel="prev"
+              >
+                ← Prev
+              </Link>
+            ) : (
+              <span
+                data-testid="alerts-pagination-prev"
+                aria-disabled="true"
+                className="inline-flex items-center rounded-md px-3 py-1 text-xs font-medium text-muted-foreground/60 ring-1 ring-inset ring-border"
+              >
+                ← Prev
+              </span>
+            )}
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+              const isActive = p === currentPage;
+              return (
+                <Link
+                  key={p}
+                  href={buildPageHref(p)}
+                  data-testid={`alerts-pagination-page-${p}`}
+                  data-active={isActive ? "true" : "false"}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`inline-flex items-center rounded-md px-3 py-1 text-xs font-medium ring-1 ring-inset ${
+                    isActive
+                      ? "bg-primary text-primary-foreground ring-primary"
+                      : "text-muted-foreground ring-border hover:bg-accent hover:text-accent-foreground"
+                  }`}
+                >
+                  {p}
+                </Link>
+              );
+            })}
+            {currentPage < totalPages ? (
+              <Link
+                href={buildPageHref(currentPage + 1)}
+                data-testid="alerts-pagination-next"
+                className="inline-flex items-center rounded-md px-3 py-1 text-xs font-medium ring-1 ring-inset ring-border hover:bg-accent hover:text-accent-foreground"
+                rel="next"
+              >
+                Next →
+              </Link>
+            ) : (
+              <span
+                data-testid="alerts-pagination-next"
+                aria-disabled="true"
+                className="inline-flex items-center rounded-md px-3 py-1 text-xs font-medium text-muted-foreground/60 ring-1 ring-inset ring-border"
+              >
+                Next →
+              </span>
+            )}
+          </div>
+        </nav>
+      )}
     </div>
   );
 }
