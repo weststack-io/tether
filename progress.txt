@@ -3683,3 +3683,42 @@ Date: 2026-05-06
 ### Next Priorities
 - UI-001: Add a loading indicator or empty-state skeleton for the dashboard while stats load.
 - UI-002: Add empty-state messaging for the alerts list when filters return zero rows.
+
+## Session 76 -- UI
+Date: 2026-05-06
+
+### Feature Worked On
+- UI-001: Loading states are displayed for all async operations (dashboard stats, alert list, alert detail, ingestion log)
+- Status: PARTIAL
+
+### What Was Done
+- Added route-level loading UI for `/`, `/alerts`, `/alerts/[id]`, and `/ingestion` via [loading.tsx](/mnt/c/repos/weststack/demos/ralph/src/app/loading.tsx), [alerts/loading.tsx](/mnt/c/repos/weststack/demos/ralph/src/app/alerts/loading.tsx), [alerts/[id]/loading.tsx](/mnt/c/repos/weststack/demos/ralph/src/app/alerts/[id]/loading.tsx), and [ingestion/loading.tsx](/mnt/c/repos/weststack/demos/ralph/src/app/ingestion/loading.tsx).
+- Added [loading-skeleton.tsx](/mnt/c/repos/weststack/demos/ralph/src/components/ui/loading-skeleton.tsx) so the route fallbacks share one lightweight pulse primitive.
+- Added targeted verification in [loading-ui.test.tsx](/mnt/c/repos/weststack/demos/ralph/__tests__/unit/loading-ui.test.tsx) and [ui-loading.test.ts](/mnt/c/repos/weststack/demos/ralph/__tests__/integration/ui-loading.test.ts).
+- Hardened the existing live-UI alert-list/detail harnesses so they parse streamed Next 16 HTML correctly instead of assuming each row arrives as one fully inlined `<tr>`.
+- Captured browser screenshots:
+  - [UI-001-dashboard.png](/mnt/c/repos/weststack/demos/ralph/specs/phase1/screenshots/UI-001-dashboard.png)
+  - [UI-001-alerts.png](/mnt/c/repos/weststack/demos/ralph/specs/phase1/screenshots/UI-001-alerts.png)
+  - [UI-001-alert-detail.png](/mnt/c/repos/weststack/demos/ralph/specs/phase1/screenshots/UI-001-alert-detail.png)
+  - [UI-001-ingestion.png](/mnt/c/repos/weststack/demos/ralph/specs/phase1/screenshots/UI-001-ingestion.png)
+
+### Testing
+- Regression checks before implementation:
+  - `npm test -- --runInBand __tests__/integration/dashboard-page-dash005.test.ts __tests__/integration/alerts-page-list008.test.ts` -> passed
+- Feature-focused verification:
+  - `npm test -- --runInBand __tests__/unit/loading-ui.test.tsx __tests__/integration/ui-loading.test.ts` -> passed
+  - `npm test -- --runInBand __tests__/integration/alerts-page-list001.test.ts` -> passed after streamed-parser updates
+  - `npm test -- --runInBand __tests__/integration/alerts-page-list002.test.ts __tests__/integration/alerts-page-list004.test.ts __tests__/integration/alerts-page-list005.test.ts __tests__/integration/alerts-page-list006.test.ts __tests__/integration/alerts-page-detail001.test.ts __tests__/integration/ui-loading.test.ts` -> passed
+  - `npx tsc --noEmit` -> passed
+- Manual/browser evidence:
+  - Verified the streamed HTML for `/`, `/alerts`, `/alerts/[id]`, and `/ingestion` contains the loading marker before the final view marker.
+  - Saved Chrome headless screenshots for each route listed above.
+
+### Blockers / Issues
+- I did **not** flip `UI-001` to `passes: true`. The direct feature work is functioning, but the required repository-wide `npm test` run still falls over later in unrelated DB-heavy integration suites with SQLite/libsql timeout errors (`Operation has timed out`) after long-lived ingestion/write activity.
+- I updated `package.json` so `npm test` runs Jest in-band, which removes worker-level parallelism, but that alone was not enough to eliminate the broader DB timeout cascade in the full suite.
+- Next 16 streamed `notFound()` responses behind `loading.tsx` surface as HTTP 200 with `noindex` metadata rather than an HTTP 404 once streaming has started. The detail-page live-UI harness was updated accordingly.
+
+### Next Priorities
+- Finish UI-001 by stabilizing the repository-wide integration run so `npm test` passes cleanly with the new streamed loading UI in place.
+- Investigate the full-suite SQLite/libsql timeout cascade around ingestion/pipeline tests and live server activity before attempting UI-002.
