@@ -600,7 +600,7 @@
         "Verify alert status is now 'escalated' and escalationNote is populated",
         "Verify an AuditEntry was created with action='escalated' and the note"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-010",
