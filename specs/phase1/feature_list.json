@@ -772,7 +772,7 @@
         "Verify only open alerts are shown",
         "Clear the filter and verify all alerts return"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LIST-005",

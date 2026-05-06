@@ -75,6 +75,15 @@ type RegulatorOption = (typeof REGULATOR_OPTIONS)[number];
 const SEVERITY_OPTIONS = ["high", "medium", "low"] as const;
 type SeverityOption = (typeof SEVERITY_OPTIONS)[number];
 
+const STATUS_OPTIONS = [
+  "open",
+  "accepted",
+  "dismissed",
+  "escalated",
+  "snoozed",
+] as const;
+type StatusOption = (typeof STATUS_OPTIONS)[number];
+
 function parseSortBy(raw: string | string[] | undefined): SortField {
   const v = Array.isArray(raw) ? raw[0] : raw;
   if (v && (SORT_FIELDS as readonly string[]).includes(v)) {
@@ -115,6 +124,20 @@ function parseSeverities(
   for (const part of flat.split(",")) {
     const v = part.trim();
     if (valid.has(v)) picked.add(v as SeverityOption);
+  }
+  return picked.size > 0 ? [...picked] : null;
+}
+
+function parseStatuses(
+  raw: string | string[] | undefined,
+): StatusOption[] | null {
+  const flat = Array.isArray(raw) ? raw.join(",") : raw;
+  if (!flat) return null;
+  const valid = new Set<string>(STATUS_OPTIONS);
+  const picked = new Set<StatusOption>();
+  for (const part of flat.split(",")) {
+    const v = part.trim();
+    if (valid.has(v)) picked.add(v as StatusOption);
   }
   return picked.size > 0 ? [...picked] : null;
 }
@@ -165,6 +188,7 @@ type AlertRow = {
 function buildWhere(
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
+  statuses: StatusOption[] | null,
 ): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (regulators) {
@@ -172,6 +196,9 @@ function buildWhere(
   }
   if (severities) {
     where.severity = { in: severities };
+  }
+  if (statuses) {
+    where.status = { in: statuses };
   }
   return where;
 }
@@ -181,8 +208,9 @@ async function loadAlerts(
   sortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
+  statuses: StatusOption[] | null,
 ): Promise<AlertRow[]> {
-  const where = buildWhere(regulators, severities);
+  const where = buildWhere(regulators, severities, statuses);
   if (sortBy === "severity") {
     // Severity uses a custom rank (high < medium < low) that Prisma's typed
     // orderBy can't express, so fetch then sort in JS. Mirrors the API-005
@@ -217,6 +245,7 @@ function buildAlertsHref(
   sortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
+  statuses: StatusOption[] | null,
 ): string {
   const params = new URLSearchParams();
   params.set("sortBy", sortBy);
@@ -227,6 +256,9 @@ function buildAlertsHref(
   if (severities && severities.length > 0) {
     params.set("severity", severities.join(","));
   }
+  if (statuses && statuses.length > 0) {
+    params.set("status", statuses.join(","));
+  }
   return `/alerts?${params.toString()}`;
 }
 
@@ -236,11 +268,12 @@ function buildSortHref(
   currentSortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
   severities: SeverityOption[] | null,
+  statuses: StatusOption[] | null,
 ): string {
   // Clicking the active column toggles direction. Clicking a different column
   // selects it with the column's natural default direction (desc for date /
-  // severity / status; asc for the alphabetic axes). The active regulator and
-  // severity filters, if any, are preserved across sort changes.
+  // severity / status; asc for the alphabetic axes). The active filters, if
+  // any, are preserved across sort changes.
   let nextOrder: SortOrder;
   if (column === currentSortBy) {
     nextOrder = currentSortOrder === "desc" ? "asc" : "desc";
@@ -250,7 +283,13 @@ function buildSortHref(
         ? "desc"
         : "asc";
   }
-  return buildAlertsHref(column, nextOrder, regulators, severities);
+  return buildAlertsHref(
+    column,
+    nextOrder,
+    regulators,
+    severities,
+    statuses,
+  );
 }
 
 function buildRegulatorToggleHref(
@@ -259,10 +298,12 @@ function buildRegulatorToggleHref(
   sortBy: SortField,
   sortOrder: SortOrder,
   severities: SeverityOption[] | null,
+  statuses: StatusOption[] | null,
 ): string {
   // Toggle membership of `reg` in the active filter set, preserving sort and
-  // severity filter. Order within the resulting CSV mirrors REGULATOR_OPTIONS
-  // order so the URL is deterministic regardless of click sequence.
+  // the other filters. Order within the resulting CSV mirrors
+  // REGULATOR_OPTIONS order so the URL is deterministic regardless of click
+  // sequence.
   const set = new Set<RegulatorOption>(active ?? []);
   if (set.has(reg)) set.delete(reg);
   else set.add(reg);
@@ -272,6 +313,7 @@ function buildRegulatorToggleHref(
     sortOrder,
     next.length > 0 ? next : null,
     severities,
+    statuses,
   );
 }
 
@@ -281,9 +323,10 @@ function buildSeverityToggleHref(
   sortBy: SortField,
   sortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
+  statuses: StatusOption[] | null,
 ): string {
   // Toggle membership of `sev` in the active severity filter set, preserving
-  // sort and regulator filter. CSV order mirrors SEVERITY_OPTIONS so the URL
+  // sort and the other filters. CSV order mirrors SEVERITY_OPTIONS so the URL
   // is deterministic regardless of click sequence.
   const set = new Set<SeverityOption>(active ?? []);
   if (set.has(sev)) set.delete(sev);
@@ -293,6 +336,31 @@ function buildSeverityToggleHref(
     sortBy,
     sortOrder,
     regulators,
+    next.length > 0 ? next : null,
+    statuses,
+  );
+}
+
+function buildStatusToggleHref(
+  st: StatusOption,
+  active: StatusOption[] | null,
+  sortBy: SortField,
+  sortOrder: SortOrder,
+  regulators: RegulatorOption[] | null,
+  severities: SeverityOption[] | null,
+): string {
+  // Toggle membership of `st` in the active status filter set, preserving
+  // sort and the other filters. CSV order mirrors STATUS_OPTIONS so the URL
+  // is deterministic regardless of click sequence.
+  const set = new Set<StatusOption>(active ?? []);
+  if (set.has(st)) set.delete(st);
+  else set.add(st);
+  const next = STATUS_OPTIONS.filter((s) => set.has(s));
+  return buildAlertsHref(
+    sortBy,
+    sortOrder,
+    regulators,
+    severities,
     next.length > 0 ? next : null,
   );
 }
@@ -316,10 +384,19 @@ export default async function AlertsPage({
   const sortOrder = parseSortOrder(params.sortOrder);
   const regulators = parseRegulators(params.regulator);
   const severities = parseSeverities(params.severity);
-  const alerts = await loadAlerts(sortBy, sortOrder, regulators, severities);
+  const statuses = parseStatuses(params.status);
+  const alerts = await loadAlerts(
+    sortBy,
+    sortOrder,
+    regulators,
+    severities,
+    statuses,
+  );
   const hasRegulatorFilter = regulators !== null && regulators.length > 0;
   const hasSeverityFilter = severities !== null && severities.length > 0;
-  const hasActiveFilter = hasRegulatorFilter || hasSeverityFilter;
+  const hasStatusFilter = statuses !== null && statuses.length > 0;
+  const hasActiveFilter =
+    hasRegulatorFilter || hasSeverityFilter || hasStatusFilter;
 
   return (
     <div className="space-y-6">
@@ -335,6 +412,7 @@ export default async function AlertsPage({
         data-testid="alerts-filter-bar"
         data-filter-regulator={regulators ? regulators.join(",") : ""}
         data-filter-severity={severities ? severities.join(",") : ""}
+        data-filter-status={statuses ? statuses.join(",") : ""}
       >
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
           Regulator
@@ -350,6 +428,7 @@ export default async function AlertsPage({
                 sortBy,
                 sortOrder,
                 severities,
+                statuses,
               )}
               data-testid={`alerts-filter-regulator-${reg}`}
               data-active={isActive ? "true" : "false"}
@@ -378,6 +457,7 @@ export default async function AlertsPage({
                 sortBy,
                 sortOrder,
                 regulators,
+                statuses,
               )}
               data-testid={`alerts-filter-severity-${sev}`}
               data-active={isActive ? "true" : "false"}
@@ -392,9 +472,38 @@ export default async function AlertsPage({
             </Link>
           );
         })}
+        <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
+          Status
+        </span>
+        {STATUS_OPTIONS.map((st) => {
+          const isActive = statuses?.includes(st) ?? false;
+          return (
+            <Link
+              key={st}
+              href={buildStatusToggleHref(
+                st,
+                statuses,
+                sortBy,
+                sortOrder,
+                regulators,
+                severities,
+              )}
+              data-testid={`alerts-filter-status-${st}`}
+              data-active={isActive ? "true" : "false"}
+              aria-pressed={isActive}
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium capitalize ring-1 ring-inset transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground ring-primary"
+                  : "bg-muted text-muted-foreground ring-border hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              {st}
+            </Link>
+          );
+        })}
         {hasActiveFilter && (
           <Link
-            href={buildAlertsHref(sortBy, sortOrder, null, null)}
+            href={buildAlertsHref(sortBy, sortOrder, null, null, null)}
             data-testid="alerts-filter-clear"
             className="ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
@@ -446,6 +555,7 @@ export default async function AlertsPage({
                               sortOrder,
                               regulators,
                               severities,
+                              statuses,
                             )}
                             className="inline-flex items-center gap-1 hover:text-foreground"
                             data-testid={`alerts-sort-${col.key}`}
