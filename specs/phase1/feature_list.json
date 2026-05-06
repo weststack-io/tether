@@ -559,7 +559,7 @@
         "Verify response includes policyChunk with content and parent policyDocument",
         "Verify response includes auditEntries array"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-007",
