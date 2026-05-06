@@ -653,7 +653,7 @@
         "Verify pagination works with page and pageSize params",
         "Verify runs are ordered by startedAt descending"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DASH-001",
