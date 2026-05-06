@@ -72,6 +72,9 @@ const COLUMNS: Array<{ key: SortField; label: string; align?: "left" | "right" }
 const REGULATOR_OPTIONS = ["SEC", "FINRA", "CFPB", "OCC"] as const;
 type RegulatorOption = (typeof REGULATOR_OPTIONS)[number];
 
+const SEVERITY_OPTIONS = ["high", "medium", "low"] as const;
+type SeverityOption = (typeof SEVERITY_OPTIONS)[number];
+
 function parseSortBy(raw: string | string[] | undefined): SortField {
   const v = Array.isArray(raw) ? raw[0] : raw;
   if (v && (SORT_FIELDS as readonly string[]).includes(v)) {
@@ -98,6 +101,20 @@ function parseRegulators(
   for (const part of flat.split(",")) {
     const v = part.trim();
     if (valid.has(v)) picked.add(v as RegulatorOption);
+  }
+  return picked.size > 0 ? [...picked] : null;
+}
+
+function parseSeverities(
+  raw: string | string[] | undefined,
+): SeverityOption[] | null {
+  const flat = Array.isArray(raw) ? raw.join(",") : raw;
+  if (!flat) return null;
+  const valid = new Set<string>(SEVERITY_OPTIONS);
+  const picked = new Set<SeverityOption>();
+  for (const part of flat.split(",")) {
+    const v = part.trim();
+    if (valid.has(v)) picked.add(v as SeverityOption);
   }
   return picked.size > 0 ? [...picked] : null;
 }
@@ -145,10 +162,16 @@ type AlertRow = {
   };
 };
 
-function buildWhere(regulators: RegulatorOption[] | null): Record<string, unknown> {
+function buildWhere(
+  regulators: RegulatorOption[] | null,
+  severities: SeverityOption[] | null,
+): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (regulators) {
     where.regulatoryItem = { regulator: { in: regulators } };
+  }
+  if (severities) {
+    where.severity = { in: severities };
   }
   return where;
 }
@@ -157,8 +180,9 @@ async function loadAlerts(
   sortBy: SortField,
   sortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
+  severities: SeverityOption[] | null,
 ): Promise<AlertRow[]> {
-  const where = buildWhere(regulators);
+  const where = buildWhere(regulators, severities);
   if (sortBy === "severity") {
     // Severity uses a custom rank (high < medium < low) that Prisma's typed
     // orderBy can't express, so fetch then sort in JS. Mirrors the API-005
@@ -192,12 +216,16 @@ function buildAlertsHref(
   sortBy: SortField,
   sortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
+  severities: SeverityOption[] | null,
 ): string {
   const params = new URLSearchParams();
   params.set("sortBy", sortBy);
   params.set("sortOrder", sortOrder);
   if (regulators && regulators.length > 0) {
     params.set("regulator", regulators.join(","));
+  }
+  if (severities && severities.length > 0) {
+    params.set("severity", severities.join(","));
   }
   return `/alerts?${params.toString()}`;
 }
@@ -207,11 +235,12 @@ function buildSortHref(
   currentSortBy: SortField,
   currentSortOrder: SortOrder,
   regulators: RegulatorOption[] | null,
+  severities: SeverityOption[] | null,
 ): string {
   // Clicking the active column toggles direction. Clicking a different column
   // selects it with the column's natural default direction (desc for date /
-  // severity / status; asc for the alphabetic axes). The active regulator
-  // filter, if any, is preserved across sort changes.
+  // severity / status; asc for the alphabetic axes). The active regulator and
+  // severity filters, if any, are preserved across sort changes.
   let nextOrder: SortOrder;
   if (column === currentSortBy) {
     nextOrder = currentSortOrder === "desc" ? "asc" : "desc";
@@ -221,7 +250,7 @@ function buildSortHref(
         ? "desc"
         : "asc";
   }
-  return buildAlertsHref(column, nextOrder, regulators);
+  return buildAlertsHref(column, nextOrder, regulators, severities);
 }
 
 function buildRegulatorToggleHref(
@@ -229,15 +258,43 @@ function buildRegulatorToggleHref(
   active: RegulatorOption[] | null,
   sortBy: SortField,
   sortOrder: SortOrder,
+  severities: SeverityOption[] | null,
 ): string {
-  // Toggle membership of `reg` in the active filter set, preserving sort.
-  // Order within the resulting CSV mirrors REGULATOR_OPTIONS order so the
-  // URL is deterministic regardless of click sequence.
+  // Toggle membership of `reg` in the active filter set, preserving sort and
+  // severity filter. Order within the resulting CSV mirrors REGULATOR_OPTIONS
+  // order so the URL is deterministic regardless of click sequence.
   const set = new Set<RegulatorOption>(active ?? []);
   if (set.has(reg)) set.delete(reg);
   else set.add(reg);
   const next = REGULATOR_OPTIONS.filter((r) => set.has(r));
-  return buildAlertsHref(sortBy, sortOrder, next.length > 0 ? next : null);
+  return buildAlertsHref(
+    sortBy,
+    sortOrder,
+    next.length > 0 ? next : null,
+    severities,
+  );
+}
+
+function buildSeverityToggleHref(
+  sev: SeverityOption,
+  active: SeverityOption[] | null,
+  sortBy: SortField,
+  sortOrder: SortOrder,
+  regulators: RegulatorOption[] | null,
+): string {
+  // Toggle membership of `sev` in the active severity filter set, preserving
+  // sort and regulator filter. CSV order mirrors SEVERITY_OPTIONS so the URL
+  // is deterministic regardless of click sequence.
+  const set = new Set<SeverityOption>(active ?? []);
+  if (set.has(sev)) set.delete(sev);
+  else set.add(sev);
+  const next = SEVERITY_OPTIONS.filter((s) => set.has(s));
+  return buildAlertsHref(
+    sortBy,
+    sortOrder,
+    regulators,
+    next.length > 0 ? next : null,
+  );
 }
 
 function sortIndicator(
@@ -258,8 +315,11 @@ export default async function AlertsPage({
   const sortBy = parseSortBy(params.sortBy);
   const sortOrder = parseSortOrder(params.sortOrder);
   const regulators = parseRegulators(params.regulator);
-  const alerts = await loadAlerts(sortBy, sortOrder, regulators);
-  const hasActiveFilter = regulators !== null && regulators.length > 0;
+  const severities = parseSeverities(params.severity);
+  const alerts = await loadAlerts(sortBy, sortOrder, regulators, severities);
+  const hasRegulatorFilter = regulators !== null && regulators.length > 0;
+  const hasSeverityFilter = severities !== null && severities.length > 0;
+  const hasActiveFilter = hasRegulatorFilter || hasSeverityFilter;
 
   return (
     <div className="space-y-6">
@@ -274,6 +334,7 @@ export default async function AlertsPage({
         className="flex flex-wrap items-center gap-2"
         data-testid="alerts-filter-bar"
         data-filter-regulator={regulators ? regulators.join(",") : ""}
+        data-filter-severity={severities ? severities.join(",") : ""}
       >
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
           Regulator
@@ -283,7 +344,13 @@ export default async function AlertsPage({
           return (
             <Link
               key={reg}
-              href={buildRegulatorToggleHref(reg, regulators, sortBy, sortOrder)}
+              href={buildRegulatorToggleHref(
+                reg,
+                regulators,
+                sortBy,
+                sortOrder,
+                severities,
+              )}
               data-testid={`alerts-filter-regulator-${reg}`}
               data-active={isActive ? "true" : "false"}
               aria-pressed={isActive}
@@ -297,9 +364,37 @@ export default async function AlertsPage({
             </Link>
           );
         })}
+        <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
+          Severity
+        </span>
+        {SEVERITY_OPTIONS.map((sev) => {
+          const isActive = severities?.includes(sev) ?? false;
+          return (
+            <Link
+              key={sev}
+              href={buildSeverityToggleHref(
+                sev,
+                severities,
+                sortBy,
+                sortOrder,
+                regulators,
+              )}
+              data-testid={`alerts-filter-severity-${sev}`}
+              data-active={isActive ? "true" : "false"}
+              aria-pressed={isActive}
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium capitalize ring-1 ring-inset transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground ring-primary"
+                  : "bg-muted text-muted-foreground ring-border hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              {sev}
+            </Link>
+          );
+        })}
         {hasActiveFilter && (
           <Link
-            href={buildAlertsHref(sortBy, sortOrder, null)}
+            href={buildAlertsHref(sortBy, sortOrder, null, null)}
             data-testid="alerts-filter-clear"
             className="ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
@@ -350,6 +445,7 @@ export default async function AlertsPage({
                               sortBy,
                               sortOrder,
                               regulators,
+                              severities,
                             )}
                             className="inline-flex items-center gap-1 hover:text-foreground"
                             data-testid={`alerts-sort-${col.key}`}
