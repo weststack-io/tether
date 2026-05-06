@@ -3744,6 +3744,7 @@ Date: 2026-05-06
   - `npm test -- --runTestsByPath __tests__/unit/loading-ui.test.tsx __tests__/integration/ui-loading.test.ts` -> passed
   - Headless Chrome verification confirmed loading markers stream before final view markers on dashboard, alerts, alert detail, and ingestion routes; screenshots saved under `specs/phase1/screenshots/UI-001-*.png`
   - `npm test` -> 70 suites / 438 tests passed
+  - `npx tsc --noEmit` -> passed after removing a stale regenerated `.next/dev/types/validator.ts` artifact and letting Next regenerate clean dev types
 
 ### Blockers / Issues
 - Initial full-suite runs still hit SQLite/libsql write locks against the shared `prisma/dev.db` file. Enabling WAL mode at Jest startup resolved the contention for the required in-band `npm test` run.
