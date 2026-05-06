@@ -216,3 +216,89 @@ export async function escalateAlertFromForm(
   const note = typeof raw === "string" ? raw : null;
   await escalateAlert(alertId, note);
 }
+
+// DETAIL-007: server action backing the Snooze button. Mirrors the API-010
+// (POST /api/alerts/[id]/action with action=snooze) snooze branch inline:
+// status -> "snoozed", snoozeUntil DateTime persisted on the Alert row,
+// audit entry recorded with the snoozeUntil ISO string as its note column
+// so the audit list shows what the alert was snoozed until. Validates the
+// input is a parseable date string in the future — anything else throws so
+// the form caller surfaces the bad input.
+export async function snoozeAlert(
+  alertId: string,
+  snoozeUntil: string | null | undefined,
+): Promise<void> {
+  if (typeof snoozeUntil !== "string" || snoozeUntil.trim().length === 0) {
+    throw new Error("Missing snoozeUntil for snooze action");
+  }
+  const parsed = new Date(snoozeUntil.trim());
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(
+      `Invalid snoozeUntil: ${JSON.stringify(snoozeUntil)}. Expected an ISO date string.`,
+    );
+  }
+  if (parsed.getTime() <= Date.now()) {
+    throw new Error("snoozeUntil must be in the future");
+  }
+
+  const existing = await prisma.alert.findUnique({ where: { id: alertId } });
+  if (!existing) {
+    throw new Error(`Alert ${alertId} not found`);
+  }
+
+  // Idempotent guard: re-snoozing an already-snoozed alert is a stale
+  // double-submit. Don't write a second audit row — the original snooze
+  // entry already records the until-date.
+  if (existing.status === "snoozed") {
+    try {
+      revalidatePath(`/alerts/${alertId}`);
+    } catch {
+      // no-op: outside a request scope (test harness)
+    }
+    return;
+  }
+
+  const untilIso = parsed.toISOString();
+  const beforeState = JSON.stringify({ status: existing.status });
+  const afterState = JSON.stringify({
+    status: "snoozed",
+    snoozeUntil: untilIso,
+  });
+
+  await prisma.$transaction([
+    prisma.alert.update({
+      where: { id: alertId },
+      data: { status: "snoozed", snoozeUntil: parsed },
+    }),
+    prisma.auditEntry.create({
+      data: {
+        alertId,
+        actor: "reviewer",
+        action: "snoozed",
+        beforeState,
+        afterState,
+        note: untilIso,
+      },
+    }),
+  ]);
+
+  try {
+    revalidatePath(`/alerts/${alertId}`);
+  } catch {
+    // no-op: outside a request scope (test harness)
+  }
+}
+
+// Form-action wrapper: <form action={snoozeAlertFromForm.bind(null, id)}>
+// Pulls "snoozeUntil" out of FormData before delegating to snoozeAlert.
+// The native <input type="date"> serializes its value as a YYYY-MM-DD string
+// which `new Date(...)` parses as midnight UTC of that day — fine for the
+// ">= today" granularity the verification step exercises.
+export async function snoozeAlertFromForm(
+  alertId: string,
+  formData: FormData,
+): Promise<void> {
+  const raw = formData.get("snoozeUntil");
+  const value = typeof raw === "string" ? raw : null;
+  await snoozeAlert(alertId, value);
+}

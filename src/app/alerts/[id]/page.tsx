@@ -5,6 +5,7 @@ import {
   acceptAlert,
   dismissAlertFromForm,
   escalateAlertFromForm,
+  snoozeAlertFromForm,
 } from "./actions";
 import {
   DISMISS_REASON_CODES,
@@ -179,6 +180,17 @@ export default async function AlertDetailPage({
   const confidenceFraction = Math.max(0, Math.min(1, alert.confidence));
   const confidencePct = Math.round(confidenceFraction * 100);
 
+  // DETAIL-007: <input type="date"> serializes its value as YYYY-MM-DD which
+  // `new Date(...)` parses as midnight UTC. For the API-010 validation
+  // (`snoozeUntil > Date.now()`) to always pass when a reviewer picks the
+  // earliest selectable date, the `min` is set to tomorrow's UTC date — that
+  // way today (which can already be in the past in the user's local tz) is
+  // not selectable.
+  const tomorrowUtc = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const tomorrowIso = tomorrowUtc.toISOString().slice(0, 10);
+  const snoozeUntilIso = alert.snoozeUntil?.toISOString() ?? null;
+  const snoozeUntilDate = snoozeUntilIso?.slice(0, 10) ?? null;
+
   return (
     <div className="space-y-6" data-testid="alert-detail" data-alert-id={alert.id}>
       <div>
@@ -198,6 +210,7 @@ export default async function AlertDetailPage({
         data-confidence={confidenceFraction}
         data-dismiss-reason={alert.dismissReason ?? ""}
         data-escalation-note={alert.escalationNote ?? ""}
+        data-snooze-until={alert.snoozeUntil?.toISOString() ?? ""}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -627,6 +640,82 @@ export default async function AlertDetailPage({
                       })`
                     : ""}
                   ; reopen to dismiss again.
+                </span>
+              </div>
+            )}
+
+            {isOpen ? (
+              // DETAIL-007: Snooze button mirrors the DETAIL-005/006 pattern —
+              // native <details> disclosure + server-rendered <input type="date">.
+              // The picker has `required` (a snooze-until date is mandatory)
+              // and `min={tomorrowIso}` so the browser only allows future
+              // calendar dates. The server action revalidates again before
+              // touching the DB so a hand-crafted form post can't bypass the
+              // future-date constraint.
+              <details
+                data-testid="alert-detail-snooze-control"
+                className="group inline-block"
+              >
+                <summary
+                  data-testid="alert-detail-snooze-button"
+                  data-action="snooze"
+                  className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-amber-500 px-3 text-sm font-medium text-white shadow-sm transition-colors marker:hidden hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden"
+                >
+                  Snooze
+                </summary>
+                <form
+                  action={snoozeAlertFromForm.bind(null, alert.id)}
+                  data-testid="alert-detail-snooze-form"
+                  className="mt-3 flex flex-col gap-2 rounded-md border border-border/60 bg-card/60 p-3 shadow-sm sm:min-w-[18rem]"
+                >
+                  <label
+                    htmlFor="alert-detail-snooze-until"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Snooze until
+                  </label>
+                  <input
+                    id="alert-detail-snooze-until"
+                    name="snoozeUntil"
+                    type="date"
+                    required
+                    min={tomorrowIso}
+                    defaultValue={tomorrowIso}
+                    data-testid="alert-detail-snooze-until-input"
+                    data-min={tomorrowIso}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  <button
+                    type="submit"
+                    data-testid="alert-detail-snooze-confirm-button"
+                    data-action="snooze-confirm"
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-amber-500 px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                  >
+                    Confirm snooze
+                  </button>
+                </form>
+              </details>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="alert-detail-snooze-button"
+                  data-action="snooze"
+                  disabled
+                  aria-disabled="true"
+                  className="inline-flex h-9 cursor-not-allowed items-center justify-center rounded-lg bg-amber-500/40 px-3 text-sm font-medium text-white/70 shadow-sm"
+                >
+                  Snooze
+                </button>
+                <span
+                  data-testid="alert-detail-snooze-locked-hint"
+                  className="text-xs text-muted-foreground"
+                >
+                  Already {statusLabel.toLowerCase()}
+                  {alert.status === "snoozed" && snoozeUntilDate
+                    ? ` until ${snoozeUntilDate}`
+                    : ""}
+                  ; reopen to snooze again.
                 </span>
               </div>
             )}

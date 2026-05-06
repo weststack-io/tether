@@ -925,7 +925,7 @@
         "Verify alert status updates to 'snoozed'",
         "Verify the snoozeUntil date is recorded"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-008",
