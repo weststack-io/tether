@@ -1006,7 +1006,7 @@
         "Verify entries include both system (created) and reviewer (accepted, dismissed, escalated) actions",
         "Verify entries have before/after state and notes where applicable"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "UI-001",

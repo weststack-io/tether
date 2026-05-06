@@ -47,6 +47,12 @@ type DemoAlertFixture = {
   daysAgo: number;
 };
 
+type DemoReviewerAction = {
+  action: "accepted" | "dismissed" | "escalated";
+  hoursAfterCreated: number;
+  note: string | null;
+};
+
 const FIXTURES: DemoAlertFixture[] = [
   {
     reg: {
@@ -215,6 +221,30 @@ const FIXTURES: DemoAlertFixture[] = [
   },
 ];
 
+const REVIEWER_AUDIT_TRAILS: Record<number, DemoReviewerAction[]> = {
+  0: [
+    {
+      action: "accepted",
+      hoursAfterCreated: 6,
+      note: null,
+    },
+  ],
+  2: [
+    {
+      action: "dismissed",
+      hoursAfterCreated: 12,
+      note: "already_addressed",
+    },
+  ],
+  3: [
+    {
+      action: "escalated",
+      hoursAfterCreated: 18,
+      note: "Escalated to Fair Lending Committee for campaign-targeting review",
+    },
+  ],
+};
+
 export type SeedDemoAlertsResult = {
   runId: string;
   alertIds: string[];
@@ -288,9 +318,21 @@ export async function seedDemoAlerts(client: Client): Promise<SeedDemoAlertsResu
     const fix = FIXTURES[i]!;
     const regId = `${REG_ID_PREFIX}${String(i + 1).padStart(3, "0")}`;
     const alertId = `${ALERT_ID_PREFIX}${String(i + 1).padStart(3, "0")}`;
-    const auditId = `${AUDIT_ID_PREFIX}${String(i + 1).padStart(3, "0")}`;
+    const auditIdBase = `${AUDIT_ID_PREFIX}${String(i + 1).padStart(3, "0")}`;
+    const reviewerTrail = REVIEWER_AUDIT_TRAILS[i] ?? [];
     const createdAt = new Date(now.getTime() - fix.daysAgo * 86_400_000);
     const createdAtIso = createdAt.toISOString();
+    const lastReviewerAction = reviewerTrail[reviewerTrail.length - 1] ?? null;
+    const finalStatus = lastReviewerAction?.action ?? "open";
+    const dismissReason =
+      lastReviewerAction?.action === "dismissed" ? lastReviewerAction.note : null;
+    const escalationNote =
+      lastReviewerAction?.action === "escalated" ? lastReviewerAction.note : null;
+    const updatedAtIso = lastReviewerAction
+      ? new Date(
+        createdAt.getTime() + lastReviewerAction.hoursAfterCreated * 3_600_000,
+      ).toISOString()
+      : createdAtIso;
     const policyReference = await resolvePolicyReference(
       client,
       fix.policy.domain,
@@ -317,8 +359,8 @@ export async function seedDemoAlerts(client: Client): Promise<SeedDemoAlertsResu
     });
 
     await client.execute({
-      sql: `INSERT INTO Alert (id, regulatoryItemId, policyChunkId, classification, confidence, severity, explanation, regulatoryQuote, policyQuote, regulatorySourceUrl, policyReference, status, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO Alert (id, regulatoryItemId, policyChunkId, classification, confidence, severity, explanation, regulatoryQuote, policyQuote, regulatorySourceUrl, policyReference, status, dismissReason, escalationNote, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         alertId,
         regId,
@@ -331,9 +373,11 @@ export async function seedDemoAlerts(client: Client): Promise<SeedDemoAlertsResu
         fix.policyQuote,
         fix.reg.sourceUrl,
         policyReference,
-        "open",
+        finalStatus,
+        dismissReason,
+        escalationNote,
         createdAtIso,
-        createdAtIso,
+        updatedAtIso,
       ],
     });
 
@@ -341,7 +385,7 @@ export async function seedDemoAlerts(client: Client): Promise<SeedDemoAlertsResu
       sql: `INSERT INTO AuditEntry (id, alertId, actor, action, beforeState, afterState, note, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        auditId,
+        `${auditIdBase}-created`,
         alertId,
         "system",
         "created",
@@ -352,11 +396,49 @@ export async function seedDemoAlerts(client: Client): Promise<SeedDemoAlertsResu
       ],
     });
 
+    let priorStatus: "open" | "accepted" | "dismissed" | "escalated" = "open";
+    for (let reviewIndex = 0; reviewIndex < reviewerTrail.length; reviewIndex++) {
+      const action = reviewerTrail[reviewIndex]!;
+      const timestamp = new Date(
+        createdAt.getTime() + action.hoursAfterCreated * 3_600_000,
+      ).toISOString();
+      await client.execute({
+        sql: `INSERT INTO AuditEntry (id, alertId, actor, action, beforeState, afterState, note, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          `${auditIdBase}-review-${String(reviewIndex + 1).padStart(2, "0")}`,
+          alertId,
+          "reviewer",
+          action.action,
+          buildAuditState(priorStatus, fix.severity, null),
+          buildAuditState(action.action, fix.severity, action.note),
+          action.note,
+          timestamp,
+        ],
+      });
+      priorStatus = action.action;
+    }
+
     alertIds.push(alertId);
     regulatoryItemIds.push(regId);
   }
 
   return { runId: DEMO_RUN_ID, alertIds, regulatoryItemIds };
+}
+
+function buildAuditState(
+  status: "open" | "accepted" | "dismissed" | "escalated",
+  severity: DemoAlertFixture["severity"],
+  note: string | null,
+): string {
+  const state: Record<string, string> = { status, severity };
+  if (status === "dismissed" && note) {
+    state.dismissReason = note;
+  }
+  if (status === "escalated" && note) {
+    state.escalationNote = note;
+  }
+  return JSON.stringify(state);
 }
 
 async function resolvePolicyReference(
