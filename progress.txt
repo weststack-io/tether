@@ -3590,3 +3590,34 @@ Date: 2026-05-06
 - SEED-003 (priority 74): Database seeded with sample IngestionRun rows so the dashboard and ingestion log have data on first load. Independent of SEED-002. The seed-inglog001-demo.ts (4 rows) and seed-inglog002-demo.ts (3 rows) tag-based seeders created in this and the prior session are throwaways — SEED-003 wants a permanent set baked into the canonical seed flow.
 - src/lib/alerts/actions.ts shared-action helper (priority 0 -- structural prerequisite, NOT a feature in feature_list.json): consolidate accept+dismiss+escalate+snooze branches still duplicated between src/app/alerts/[id]/actions.ts + src/app/api/alerts/[id]/action/route.ts. Sessions 65-71 flagged this; INGLOG-002 didn't add a new action branch but the duplication is still the right cleanup before more action types land.
 - src/lib/alerts/labels.ts + src/lib/ingestion/labels.ts shared-labels refactor (priority 0 -- structural prerequisite, NOT a feature in feature_list.json): consolidate the alert-side and ingestion-side label maps. Sessions 57-71 flagged the alert-side cleanup; INGLOG-002 added one new map (ERROR_KIND_LABEL) to the ingestion-side pile.
+
+## Session 73 -- Data Seeding
+Date: 2026-05-06
+
+### Feature Worked On
+- SEED-003: Database seeded with sample ingestion runs so the dashboard and ingestion log have data on first load
+- Status: PASSED
+
+### What Was Done
+- Added [ingestion-runs.ts](/mnt/c/repos/weststack/demos/ralph/src/lib/seed/ingestion-runs.ts) with `seedDemoIngestionRuns(client)` to create three deterministic demo `IngestionRun` rows (`seed-demo-ingestion-run-001..003`) with realistic metrics.
+- Seeded mixed statuses (`completed`, `failed`) and mixed triggers (`manual`, `scheduled`) plus representative `itemsProcessed/itemsFlagged/itemsSuppressed` values.
+- Wired the helper into [seed.ts](/mnt/c/repos/weststack/demos/ralph/prisma/seed.ts) so `npx prisma db seed` now always populates demo ingestion runs.
+- Fixed a pre-existing FK-order issue in [seed.ts](/mnt/c/repos/weststack/demos/ralph/prisma/seed.ts) by deleting dependent tables (`AuditEntry`, `Alert`, `RegulatoryItem`, `IngestionRun`) before reseeding policies.
+
+### Testing
+- Regression checks before implementation:
+  - `curl http://localhost:3000/api/health` -> 200 with `{ status: "ok", db: "connected" }`
+  - `curl "http://localhost:3000/api/ingestion/log?page=1&pageSize=5"` -> 200 with runs payload
+- Feature verification:
+  - `npx prisma db seed` completed successfully and logged `Seeded 3 demo ingestion runs for dashboard/ingestion log bootstrap.`
+  - Confirmed seeded runs include both `completed` and `failed` status and non-zero realistic metrics in the DB (via post-seed ingestion log/API inspection).
+- Required full-suite run:
+  - `npm test` was executed but failed due broad pre-existing DB timeout/lock contention across many unrelated integration tests (`Operation has timed out` on `prisma.ingestionRun.create` in multiple suites).
+
+### Blockers / Issues
+- SQLite lock/contention instability in the existing full integration suite prevented clean green `npm test` for unrelated tests.
+- A pre-existing seed FK deletion order bug surfaced during this session and was corrected in `prisma/seed.ts`.
+
+### Next Priorities
+- SEED-004: Seed sample audit entries showing reviewer actions for demo audit trail coverage.
+- Investigate/deflake global integration DB lock behavior (test harness/process concurrency) so required full-suite runs are reliable.
