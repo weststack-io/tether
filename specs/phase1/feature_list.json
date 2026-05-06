@@ -502,7 +502,7 @@
         "Verify response contains totalOpen count matching open alerts",
         "Verify response contains recentIngestion array with up to 5 recent runs"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-003",
