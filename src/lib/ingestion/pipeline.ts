@@ -85,6 +85,7 @@ export async function runIngestion(
 
   const parserErrors: ParserError[] = [];
   const driftErrors: DriftError[] = [];
+  let parserFetchFailures = 0;
 
   try {
     const settled = await Promise.allSettled(parsers.map((p) => p.fetch()));
@@ -98,6 +99,7 @@ export async function runIngestion(
         const message =
           res.reason instanceof Error ? res.reason.message : String(res.reason);
         parserErrors.push({ regulator, error: message });
+        parserFetchFailures += 1;
         console.warn(`[runIngestion] parser ${regulator} failed: ${message}`);
       }
     });
@@ -167,10 +169,19 @@ export async function runIngestion(
         ? null
         : JSON.stringify({ parserErrors, driftErrors });
 
+    // If every parser-fetch failed, the run produced nothing from any source
+    // and is a true failure. Partial parser failures (1..n-1 of n) keep
+    // status='completed' per the failed-isolation contract -- one parser
+    // going down should not poison the rest of the run.
+    const allParsersFailed = parserFetchFailures === parsers.length;
+    const finalStatus: "completed" | "failed" = allParsersFailed
+      ? "failed"
+      : "completed";
+
     const finalRun = await prisma.ingestionRun.update({
       where: { id: run.id },
       data: {
-        status: "completed",
+        status: finalStatus,
         completedAt: new Date(),
         itemsProcessed: persistedIds.length,
         errors: errorsBlob,
@@ -179,7 +190,7 @@ export async function runIngestion(
 
     return {
       runId: run.id,
-      status: "completed",
+      status: finalStatus,
       itemsProcessed: persistedIds.length,
       itemsFlagged: finalRun.itemsFlagged,
       itemsSuppressed: finalRun.itemsSuppressed,

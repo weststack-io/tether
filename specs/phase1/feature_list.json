@@ -486,7 +486,7 @@
         "Trigger another ingestion run immediately after",
         "Verify the second run starts and completes independently"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-002",
