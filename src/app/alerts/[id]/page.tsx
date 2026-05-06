@@ -309,6 +309,69 @@ export default async function AlertDetailPage({
           </p>
         </CardContent>
       </Card>
+
+      <Card data-testid="alert-detail-citations">
+        <CardHeader>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            Citations
+          </div>
+          <CardTitle>Citation chain</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid gap-4 text-sm sm:grid-cols-2">
+            <div
+              className="space-y-1"
+              data-testid="alert-detail-citation-regulatory"
+            >
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Regulatory source
+              </dt>
+              <dd>
+                <a
+                  data-testid="alert-detail-citation-regulatory-link"
+                  data-source-url={alert.regulatorySourceUrl}
+                  href={alert.regulatorySourceUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="break-all font-mono text-sm text-primary underline decoration-dotted underline-offset-4 hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {alert.regulatorySourceUrl}
+                </a>
+              </dd>
+            </div>
+
+            <div
+              className="space-y-1"
+              data-testid="alert-detail-citation-policy"
+            >
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Policy reference
+              </dt>
+              <dd
+                data-testid="alert-detail-citation-policy-reference"
+                data-policy-reference={alert.policyReference}
+                className="space-x-1 text-sm text-foreground"
+              >
+                <span
+                  data-testid="alert-detail-citation-policy-document"
+                  className="font-medium"
+                >
+                  {policy.title}
+                </span>
+                <span aria-hidden="true" className="text-muted-foreground">
+                  ›
+                </span>
+                <span
+                  data-testid="alert-detail-citation-policy-section"
+                  className="text-muted-foreground"
+                >
+                  {chunk.sectionHeading}
+                </span>
+              </dd>
+            </div>
+          </dl>
+        </CardContent>
+      </Card>
     </div>
   );
 }

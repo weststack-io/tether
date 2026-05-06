@@ -866,7 +866,7 @@
         "Verify the policy reference shows the document title and section heading",
         "Verify both citations are clearly labeled"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-004",
