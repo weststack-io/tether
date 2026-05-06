@@ -627,7 +627,7 @@
         "Verify an IngestionRun record was created with trigger='manual' and status='running'",
         "Wait briefly and verify the run eventually completes or fails (not stuck)"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-012",

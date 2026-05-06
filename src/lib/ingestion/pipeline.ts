@@ -71,6 +71,12 @@ export interface RunIngestionOptions {
   // Test seam: lets integration tests inject mock parsers without having to
   // jest.unstable_mockModule four separate parser modules.
   parsers?: ParserBinding[];
+  // When provided, the orchestrator uses this existing IngestionRun row
+  // instead of creating one. The HTTP trigger route (API-011) creates the
+  // row up-front so it can return runId synchronously, then fires
+  // runIngestion as a fire-and-forget; the orchestrator drives the row
+  // through completion (or failure) the rest of the way.
+  runId?: string;
 }
 
 export async function runIngestion(
@@ -79,9 +85,13 @@ export async function runIngestion(
   const trigger: IngestionTrigger = options.trigger ?? "manual";
   const parsers = options.parsers ?? DEFAULT_PARSERS;
 
-  const run = await prisma.ingestionRun.create({
-    data: { trigger, status: "running" },
-  });
+  const run = options.runId
+    ? await prisma.ingestionRun.findUniqueOrThrow({
+        where: { id: options.runId },
+      })
+    : await prisma.ingestionRun.create({
+        data: { trigger, status: "running" },
+      });
 
   const parserErrors: ParserError[] = [];
   const driftErrors: DriftError[] = [];
