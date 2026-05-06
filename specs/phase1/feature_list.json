@@ -910,7 +910,7 @@
         "Verify alert status updates to 'escalated'",
         "Verify the escalation note is recorded"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-007",

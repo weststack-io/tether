@@ -1,7 +1,11 @@
 import { notFound } from "next/navigation";
 import prisma from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { acceptAlert, dismissAlertFromForm } from "./actions";
+import {
+  acceptAlert,
+  dismissAlertFromForm,
+  escalateAlertFromForm,
+} from "./actions";
 import {
   DISMISS_REASON_CODES,
   DISMISS_REASON_LABELS,
@@ -193,6 +197,7 @@ export default async function AlertDetailPage({
         data-status={alert.status}
         data-confidence={confidenceFraction}
         data-dismiss-reason={alert.dismissReason ?? ""}
+        data-escalation-note={alert.escalationNote ?? ""}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -460,6 +465,79 @@ export default async function AlertDetailPage({
                 </span>
               ) : null}
             </form>
+
+            {isOpen ? (
+              // DETAIL-006: Escalate button mirrors the DETAIL-005 dismiss
+              // pattern — native <details> disclosure with a server-rendered
+              // form inside, posting to the escalateAlertFromForm server
+              // action. The note is OPTIONAL per app_spec; the textarea has
+              // no `required` attribute so a reviewer can confirm without
+              // typing anything (an empty note is normalized to null in the
+              // server action).
+              <details
+                data-testid="alert-detail-escalate-control"
+                className="group inline-block"
+              >
+                <summary
+                  data-testid="alert-detail-escalate-button"
+                  data-action="escalate"
+                  className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-red-600 px-3 text-sm font-medium text-white shadow-sm transition-colors marker:hidden hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden"
+                >
+                  Escalate
+                </summary>
+                <form
+                  action={escalateAlertFromForm.bind(null, alert.id)}
+                  data-testid="alert-detail-escalate-form"
+                  className="mt-3 flex flex-col gap-2 rounded-md border border-border/60 bg-card/60 p-3 shadow-sm sm:min-w-[20rem]"
+                >
+                  <label
+                    htmlFor="alert-detail-escalate-note"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Note (optional)
+                  </label>
+                  <textarea
+                    id="alert-detail-escalate-note"
+                    name="note"
+                    rows={3}
+                    placeholder="Add an escalation note for the next reviewer…"
+                    data-testid="alert-detail-escalate-note-input"
+                    className="rounded-md border border-input bg-background px-2 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  <button
+                    type="submit"
+                    data-testid="alert-detail-escalate-confirm-button"
+                    data-action="escalate-confirm"
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                  >
+                    Confirm escalate
+                  </button>
+                </form>
+              </details>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="alert-detail-escalate-button"
+                  data-action="escalate"
+                  disabled
+                  aria-disabled="true"
+                  className="inline-flex h-9 cursor-not-allowed items-center justify-center rounded-lg bg-red-600/40 px-3 text-sm font-medium text-white/70 shadow-sm"
+                >
+                  Escalate
+                </button>
+                <span
+                  data-testid="alert-detail-escalate-locked-hint"
+                  className="text-xs text-muted-foreground"
+                >
+                  Already {statusLabel.toLowerCase()}
+                  {alert.status === "escalated" && alert.escalationNote
+                    ? ` — “${alert.escalationNote}”`
+                    : ""}
+                  ; reopen to escalate again.
+                </span>
+              </div>
+            )}
 
             {isOpen ? (
               // DETAIL-005: Dismiss button uses a native <details> disclosure

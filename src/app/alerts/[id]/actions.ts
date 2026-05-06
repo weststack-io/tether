@@ -144,3 +144,75 @@ export async function dismissAlertFromForm(
   const reason = typeof raw === "string" ? raw : "";
   await dismissAlert(alertId, reason);
 }
+
+// DETAIL-006: server action backing the Escalate button. Mirrors the
+// API-009 (POST /api/alerts/[id]/action with action=escalate) escalate
+// branch inline: status -> "escalated", optional escalationNote persisted
+// on the Alert row, audit entry recorded with the note as its note column.
+// The escalation note is optional per app_spec — an empty/whitespace input
+// is normalized to null so the DB doesn't carry empty strings as "notes".
+export async function escalateAlert(
+  alertId: string,
+  note: string | null | undefined,
+): Promise<void> {
+  const trimmed =
+    typeof note === "string" && note.trim().length > 0 ? note.trim() : null;
+
+  const existing = await prisma.alert.findUnique({ where: { id: alertId } });
+  if (!existing) {
+    throw new Error(`Alert ${alertId} not found`);
+  }
+
+  // Idempotent guard: re-escalating an already-escalated alert is a stale
+  // double-submit. Don't write a second audit row — the original escalate
+  // entry already records the note.
+  if (existing.status === "escalated") {
+    try {
+      revalidatePath(`/alerts/${alertId}`);
+    } catch {
+      // no-op: outside a request scope (test harness)
+    }
+    return;
+  }
+
+  const beforeState = JSON.stringify({ status: existing.status });
+  const afterState = JSON.stringify({
+    status: "escalated",
+    escalationNote: trimmed,
+  });
+
+  await prisma.$transaction([
+    prisma.alert.update({
+      where: { id: alertId },
+      data: { status: "escalated", escalationNote: trimmed },
+    }),
+    prisma.auditEntry.create({
+      data: {
+        alertId,
+        actor: "reviewer",
+        action: "escalated",
+        beforeState,
+        afterState,
+        note: trimmed,
+      },
+    }),
+  ]);
+
+  try {
+    revalidatePath(`/alerts/${alertId}`);
+  } catch {
+    // no-op: outside a request scope (test harness)
+  }
+}
+
+// Form-action wrapper: <form action={escalateAlertFromForm.bind(null, id)}>
+// Pulls "note" out of FormData before delegating to escalateAlert. Empty
+// input is allowed (note is optional) — escalateAlert normalizes it to null.
+export async function escalateAlertFromForm(
+  alertId: string,
+  formData: FormData,
+): Promise<void> {
+  const raw = formData.get("note");
+  const note = typeof raw === "string" ? raw : null;
+  await escalateAlert(alertId, note);
+}
