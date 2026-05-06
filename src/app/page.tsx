@@ -11,6 +11,17 @@ export const dynamic = "force-dynamic";
 
 type SeverityKey = "high" | "medium" | "low";
 type RegulatorKey = "SEC" | "FINRA" | "CFPB" | "OCC";
+type DomainKey =
+  | "bsa_aml"
+  | "complaint_handling"
+  | "fair_lending"
+  | "reg_e"
+  | "reg_z"
+  | "vendor_management"
+  | "info_security"
+  | "cip"
+  | "overdraft"
+  | "marketing";
 
 const SEVERITY_CARDS: Array<{
   key: SeverityKey;
@@ -51,6 +62,23 @@ const REGULATOR_CARDS: Array<{
   { key: "OCC", label: "OCC", description: "Office of the Comptroller of the Currency" },
 ];
 
+const DOMAIN_CARDS: Array<{ key: DomainKey; label: string }> = [
+  { key: "bsa_aml", label: "BSA/AML" },
+  { key: "complaint_handling", label: "Complaint Handling" },
+  { key: "fair_lending", label: "Fair Lending" },
+  { key: "reg_e", label: "Regulation E" },
+  { key: "reg_z", label: "Regulation Z" },
+  { key: "vendor_management", label: "Vendor Management" },
+  { key: "info_security", label: "Information Security" },
+  { key: "cip", label: "Customer Identification Program" },
+  { key: "overdraft", label: "Overdraft" },
+  { key: "marketing", label: "Marketing" },
+];
+
+const DOMAIN_KEYS: ReadonlySet<DomainKey> = new Set(
+  DOMAIN_CARDS.map((c) => c.key),
+);
+
 async function getOpenAlertSeverityCounts(): Promise<Record<SeverityKey, number>> {
   const rows = await prisma.alert.groupBy({
     by: ["severity"],
@@ -61,6 +89,34 @@ async function getOpenAlertSeverityCounts(): Promise<Record<SeverityKey, number>
   for (const row of rows) {
     if (row.severity === "high" || row.severity === "medium" || row.severity === "low") {
       counts[row.severity] = row._count._all;
+    }
+  }
+  return counts;
+}
+
+async function getOpenAlertDomainCounts(): Promise<Record<DomainKey, number>> {
+  const rows = await prisma.alert.findMany({
+    where: { status: "open" },
+    select: {
+      policyChunk: { select: { policyDocument: { select: { domain: true } } } },
+    },
+  });
+  const counts: Record<DomainKey, number> = {
+    bsa_aml: 0,
+    complaint_handling: 0,
+    fair_lending: 0,
+    reg_e: 0,
+    reg_z: 0,
+    vendor_management: 0,
+    info_security: 0,
+    cip: 0,
+    overdraft: 0,
+    marketing: 0,
+  };
+  for (const row of rows) {
+    const domain = row.policyChunk.policyDocument.domain as DomainKey;
+    if (DOMAIN_KEYS.has(domain)) {
+      counts[domain] += 1;
     }
   }
   return counts;
@@ -82,9 +138,10 @@ async function getOpenAlertRegulatorCounts(): Promise<Record<RegulatorKey, numbe
 }
 
 export default async function DashboardPage() {
-  const [severityCounts, regulatorCounts] = await Promise.all([
+  const [severityCounts, regulatorCounts, domainCounts] = await Promise.all([
     getOpenAlertSeverityCounts(),
     getOpenAlertRegulatorCounts(),
+    getOpenAlertDomainCounts(),
   ]);
 
   return (
@@ -152,6 +209,38 @@ export default async function DashboardPage() {
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {card.description}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="font-heading text-lg font-semibold">By policy domain</h2>
+          <p className="text-sm text-muted-foreground">
+            Open alerts grouped by the policy domain of the matched chunk
+          </p>
+        </div>
+        <div
+          className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5"
+          data-testid="domain-cards"
+        >
+          {DOMAIN_CARDS.map((card) => (
+            <Card key={card.key} data-domain={card.key}>
+              <CardHeader>
+                <CardTitle className="text-sm">{card.label}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="font-heading text-3xl font-semibold tabular-nums"
+                  data-testid={`domain-count-${card.key}`}
+                >
+                  {domainCounts[card.key]}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  open alerts
                 </div>
               </CardContent>
             </Card>

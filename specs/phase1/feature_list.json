@@ -706,7 +706,7 @@
         "Verify domain names are human-readable",
         "Verify counts match the database"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DASH-005",
