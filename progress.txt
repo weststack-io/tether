@@ -3012,3 +3012,65 @@ Date: 2026-05-06
 - DETAIL-004..007: Accept / Dismiss / Escalate / Snooze action buttons. These will need POST endpoints (already present at /api/alerts/:id/{accept,dismiss,escalate,snooze}) and the action bar UI section per app_spec.txt:492.
 - DETAIL-008: audit history timeline beneath the action bar.
 - The seed-list001-demo.ts (5 rows) and seed-list007-demo.ts (32 rows) tag-based seeders are still adequate. A parameterized seeder remains on the wish-list but isn't blocking DETAIL-* work.
+
+## Session 64 -- Alert Detail Summary (Classification / Confidence / Severity / Explanation)
+Date: 2026-05-06
+
+### Feature Worked On
+- DETAIL-002 (priority 64): Alert detail page shows drift classification badge, confidence score bar, severity badge, and plain-language explanation
+- Status: PASSED
+
+### What Was Done
+- Extended src/app/alerts/[id]/page.tsx with three new render blocks; the two-panel grid from DETAIL-001 stays intact between them.
+  - Above the panels: a "summary" card (data-testid="alert-detail-summary") containing the classification badge, the severity badge, and a confidence row (numeric percentage on the right; horizontal progress bar fill below).
+  - Below the panels: a "Plain-language explanation" Card (data-testid="alert-detail-explanation") rendering alert.explanation as preformatted text.
+- Added three label/color tables alongside the existing REGULATOR_BADGE_CLASS / DOCUMENT_TYPE_LABELS / DOMAIN_LABELS:
+  - SEVERITY_BADGE_CLASS (high=red, medium=amber, low=blue) -- mirrors the alerts list table palette so the list-view → detail-view transition is visually continuous.
+  - CLASSIFICATION_BADGE_CLASS (aligned=emerald, drifted=amber, contradicted=red, ambiguous=purple, no_material_impact=slate) -- new, since the list view didn't yet color-code this axis.
+  - CLASSIFICATION_LABELS (drifted -> "Drifted" etc.) -- duplicates the same map from src/app/alerts/page.tsx; flagged again as a candidate for src/lib/alerts/labels.ts consolidation.
+  - CONFIDENCE_BAR_CLASS keys the bar fill color off the classification (drifted/contradicted -> warm hues, aligned -> emerald, ambiguous/no_material -> neutral) so a quick glance at the bar communicates both "how confident" and "of what".
+- Confidence bar is a div with `role="progressbar"`, `aria-valuemin={0}`, `aria-valuemax={100}`, `aria-valuenow={confidencePct}`, `aria-label="Classification confidence N%"` plus a child fill div whose width is set inline via `style={{ width: \`${confidencePct}%\` }}`. Bar height is `h-2` so it reads as a thin meter, not a chunky rectangle.
+- Confidence is clamped into [0, 1] with `Math.max(0, Math.min(1, alert.confidence))` before scaling -- defensive against any malformed seed/classifier output that may sneak through; the bar should never render past 100% or as a negative width.
+- Numeric percentage is rendered with a template literal (`{`${confidencePct}%`}`) rather than two adjacent JSX expressions (`{confidencePct}%`). React inserts a `<!-- -->` hydration marker between adjacent text/expression siblings; the integration test asserts the literal "84%" substring renders, and the marker would split it. Switching to a single string expression keeps "84%" contiguous in the rendered HTML.
+- Severity badge label is rendered as "high severity" / "medium severity" / "low severity" rather than just the bare word -- pairs the severity word with its noun so the badge reads unambiguously next to the classification badge ("Drifted" vs "high"). The CSS `capitalize` class title-cases the first word visually.
+- Decision: NOT to refactor the duplicated label maps into src/lib/alerts/labels.ts in this session. The brief is "extend, don't refactor". Sessions 57-63 have flagged this consolidation; the natural moment to do it is before DETAIL-003 lands (which will reuse SEVERITY_BADGE_CLASS again) or as a paired structural-prerequisite sub-task.
+- Decision: place the summary block ABOVE the two-panel grid and the explanation BELOW. The DETAIL-002 spec only constrains placement of the explanation ("below the panels"); the badges/confidence-bar are unconstrained. Putting the summary above the grid means a viewer's eye lands first on "what kind of drift is this and how confident are we", then the side-by-side evidence, then the human-readable rationale beneath -- inverted-pyramid reading order that matches how a compliance reviewer would scan the page.
+- Decision: confidence is shown both as a numeric percentage AND as a visual bar. The spec accepts "a visual bar OR percentage"; both is more informative and the marginal cost is one extra `<span>`. The bar carries the spec's "visual" requirement; the numeric label carries the precise value for screen readers / pixel-precise reading.
+
+### Files Modified / Created
+- src/app/alerts/[id]/page.tsx (extended: added SEVERITY_BADGE_CLASS / CLASSIFICATION_BADGE_CLASS / CLASSIFICATION_LABELS / CONFIDENCE_BAR_CLASS maps; added summary block with two badges + confidence row + progress bar; added explanation Card below the panels grid; +85 lines net)
+- __tests__/integration/alerts-page-detail002.test.ts (new, 5 tests, ~310 lines): seeds one alert with classification=drifted / severity=high / confidence=0.84 / explanation=tagged-string under tag "detail002-verify"; asserts (1) classification badge has bg-amber-50 + text-amber-700, (2) severity badge has bg-red-50 + text-red-700 and reads "high severity", (3) confidence value renders "84%" and the progress bar carries role="progressbar" + aria-valuenow="84" + style="width:84%", (4) explanation text renders inside data-testid="alert-detail-explanation" and lives strictly later in the HTML byte stream than the panels grid (DOM-order assertion enforces "below the panels"), (5) summary container exposes classification / severity / confidence as data attrs for programmatic queries
+- specs/phase1/screenshots/DETAIL-002.png (new full-page Playwright screenshot of the rendered detail page for the first list001-demo seeded alert -- shows amber Drifted + red High Severity badges, 90% confidence bar with amber fill, and the plain-language explanation card below the panels)
+- specs/phase1/feature_list.json (DETAIL-002 passes -> true)
+
+### Testing
+- Verified all 5 DETAIL-002 acceptance steps:
+  1. Navigate to an alert detail page: ran scripts/seed-list001-demo.ts via `node --experimental-strip-types`, took the first seeded alert id, Playwright navigated to /alerts/cmou9ugff000c8vuxblxi1ttl. HTTP 200; 0 console errors / 0 warnings.
+  2. Verify classification badge is visible with correct color coding: browser_evaluate confirmed the badge text "Drifted" + class list includes `bg-amber-50 text-amber-700 ring-amber-200` (the amber palette assigned to "drifted" in CLASSIFICATION_BADGE_CLASS).
+  3. Verify confidence score is displayed as a visual bar or percentage: browser_evaluate confirmed the value span renders "90%", the bar div carries `role="progressbar"` + `aria-valuenow="90"` + `data-confidence-pct="90"`, and the fill div has inline style `width:90%` and class `bg-amber-500`. Screenshot DETAIL-002.png shows the amber bar filled to ~90% of the gray track.
+  4. Verify severity badge is visible with correct color coding: browser_evaluate confirmed badge text "high severity" + class list includes `bg-red-50 text-red-700 ring-red-200` (the red palette assigned to "high" in SEVERITY_BADGE_CLASS).
+  5. Verify plain-language explanation text is displayed below the panels: browser_evaluate confirmed the card data-testid is present, the inner text is "list001-demo explanation 0", and getBoundingClientRect().top values place the summary at y=153, the panels at y=275, the explanation at y=481 -- strictly increasing, so explanation is visually below the panels.
+- Test suite results: `npm test` -> 58 suites / 382 tests passing (was 57 / 377; +1 suite / +5 tests for DETAIL-002). ~94s runtime. Single DETAIL-002 file run -> 5/5 passing in ~7.5s.
+- Regression: `npx tsc --noEmit` -> zero errors. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..005, LIST-001..008, DETAIL-001 all unchanged (full-suite green).
+- Live Playwright verification:
+  - Seeded 5 demo alerts via scripts/seed-list001-demo.ts.
+  - Navigated to /alerts/<first-id>; took full-page screenshot DETAIL-002.png; browser_evaluate confirmed all four DETAIL-002 elements present + correct DOM layout order.
+  - Console: 0 errors, 0 warnings.
+  - Wiped demo data via scripts/wipe-list001-demo.ts (deleted 5 items / 5 policies / 1 run).
+
+### Blockers / Issues
+- Dev-server staleness reappeared mid-session: after editing src/app/alerts/[id]/page.tsx, the first DETAIL-002 test run failed with "no testid match" because the dev server was still serving the cached pre-edit module. Same recurring family as Sessions 44-63. Fixed with one ./scripts/dev-up.sh.
+- React 19 inserts an HTML comment (`<!-- -->`) between adjacent text/expression siblings in JSX (e.g., `{confidencePct}%` renders as `84<!-- -->%`). The original integration test assertion `expect(text).toContain("84%")` failed because of this. Worked around by switching the JSX to a single template literal `{`${confidencePct}%`}` so the literal "84%" survives serialization. Worth remembering for any future "string contains" assertions over server-rendered React output.
+- Label-map duplication grew this session: SEVERITY_BADGE_CLASS and CLASSIFICATION_LABELS now exist in both src/app/alerts/page.tsx (list view) and src/app/alerts/[id]/page.tsx (detail view). The natural cleanup is the src/lib/alerts/labels.ts module that Session 63 already flagged. Held off again per "extend, don't refactor"; will keep getting noisier as DETAIL-003..008 reuse these maps.
+- Confidence bar uses inline `style={{ width: \`${pct}%\` }}` rather than a Tailwind utility (which can't express dynamic widths without arbitrary-value JIT). The integration test asserts the inline style attribute, locking the visual signal. The trade-off is one inline style on one element; acceptable.
+- The `node --experimental-strip-types scripts/seed-list001-demo.ts` invocation prints a MODULE_TYPELESS_PACKAGE_JSON warning ("Module type ... is not specified"). Cosmetic only; the seed succeeds. Adding `"type": "module"` to package.json would silence it but is a wider refactor (touches every CommonJS-shaped file in the repo).
+- Screenshots show the same Next.js dev-tools "N" overlay as Sessions 55-63; production builds don't render it.
+- The aria-label on the confidence bar uses raw "Classification confidence N%" (e.g., "Classification confidence 84%"). A future polish would prefix with the classification ("Drift confidence 84%") or pair with the severity for a one-shot screen-reader summary; not required by the verification steps.
+
+### Next Priorities
+- src/lib/alerts/labels.ts shared-labels refactor (priority 0 -- structural prerequisite, NOT a feature in feature_list.json): consolidate REGULATOR_BADGE_CLASS / DOCUMENT_TYPE_LABELS / DOMAIN_LABELS / CLASSIFICATION_LABELS / CLASSIFICATION_BADGE_CLASS / SEVERITY_BADGE_CLASS / STATUS_BADGE_CLASS / CONFIDENCE_BAR_CLASS into a single module imported by the list and detail pages. Sessions 57-63 flagged this; this session's CLASSIFICATION_LABELS duplication makes it more concrete. Best to land before DETAIL-003+ keeps adding copies.
+- DETAIL-003 (priority 65): citation chain UI -- regulatorySourceUrl as a clickable external link, policyReference (PolicyTitle > SectionHeading) as a labeled internal link or text. Both already exist on the alert model. Pure rendering pass; no schema changes.
+- DETAIL-004 (priority 66): Accept button. POST /api/alerts/[id]/accept already exists (API-009). Will need a small Client Component (Server Components can't `useTransition` for the optimistic submit feel) or a `<form action>` submission with a server action. The simplest path is `<form action={acceptAction}>` with a server action that calls the existing route handler then `revalidatePath`.
+- DETAIL-005..007: Dismiss / Escalate / Snooze. Each adds a small popover or dialog (reason code selector / note input / date picker) before the action commits.
+- DETAIL-008: audit history timeline beneath the action bar. The data is already there via `auditEntries` on the alert (need to add `include: { auditEntries: true }` to the existing prisma query in /alerts/[id]/page.tsx).
+- The seed-list001-demo.ts (5 rows) tag-based seeder is still adequate for DETAIL-* manual verification. A parameterized seeder remains on the wish-list but isn't blocking.
