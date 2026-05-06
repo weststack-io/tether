@@ -1,7 +1,11 @@
 import { notFound } from "next/navigation";
 import prisma from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { acceptAlert } from "./actions";
+import { acceptAlert, dismissAlertFromForm } from "./actions";
+import {
+  DISMISS_REASON_CODES,
+  DISMISS_REASON_LABELS,
+} from "./dismiss-reasons";
 
 export const dynamic = "force-dynamic";
 
@@ -188,6 +192,7 @@ export default async function AlertDetailPage({
         data-severity={alert.severity}
         data-status={alert.status}
         data-confidence={confidenceFraction}
+        data-dismiss-reason={alert.dismissReason ?? ""}
       >
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -429,31 +434,125 @@ export default async function AlertDetailPage({
           </div>
           <CardTitle>Action bar</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form
-            action={acceptAlert.bind(null, alert.id)}
-            data-testid="alert-detail-accept-form"
-            className="flex flex-wrap items-center gap-2"
-          >
-            <button
-              type="submit"
-              data-testid="alert-detail-accept-button"
-              data-action="accept"
-              disabled={!isOpen}
-              aria-disabled={!isOpen}
-              className="inline-flex h-9 items-center justify-center rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-600/40 disabled:text-white/70"
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-start gap-3">
+            <form
+              action={acceptAlert.bind(null, alert.id)}
+              data-testid="alert-detail-accept-form"
+              className="flex flex-wrap items-center gap-2"
             >
-              Accept
-            </button>
-            {!isOpen ? (
-              <span
-                data-testid="alert-detail-accept-locked-hint"
-                className="text-xs text-muted-foreground"
+              <button
+                type="submit"
+                data-testid="alert-detail-accept-button"
+                data-action="accept"
+                disabled={!isOpen}
+                aria-disabled={!isOpen}
+                className="inline-flex h-9 items-center justify-center rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-600/40 disabled:text-white/70"
               >
-                Already {statusLabel.toLowerCase()}; reopen to accept again.
-              </span>
-            ) : null}
-          </form>
+                Accept
+              </button>
+              {!isOpen ? (
+                <span
+                  data-testid="alert-detail-accept-locked-hint"
+                  className="text-xs text-muted-foreground"
+                >
+                  Already {statusLabel.toLowerCase()}; reopen to accept again.
+                </span>
+              ) : null}
+            </form>
+
+            {isOpen ? (
+              // DETAIL-005: Dismiss button uses a native <details> disclosure
+              // so the reason-code selector is server-rendered (no client JS
+              // needed). Clicking the Dismiss <summary> toggles the panel
+              // open; submitting the inner form invokes the dismissAlert
+              // server action with the chosen reason. The <select> is in the
+              // DOM regardless of the open state, which makes the integration
+              // test markup-driven (no need to drive a real browser to expand
+              // the disclosure).
+              <details
+                data-testid="alert-detail-dismiss-control"
+                className="group inline-block"
+              >
+                <summary
+                  data-testid="alert-detail-dismiss-button"
+                  data-action="dismiss"
+                  className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-zinc-700 px-3 text-sm font-medium text-white shadow-sm transition-colors marker:hidden hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden"
+                >
+                  Dismiss
+                </summary>
+                <form
+                  action={dismissAlertFromForm.bind(null, alert.id)}
+                  data-testid="alert-detail-dismiss-form"
+                  className="mt-3 flex flex-col gap-2 rounded-md border border-border/60 bg-card/60 p-3 shadow-sm sm:min-w-[18rem]"
+                >
+                  <label
+                    htmlFor="alert-detail-dismiss-reason"
+                    className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Reason
+                  </label>
+                  <select
+                    id="alert-detail-dismiss-reason"
+                    name="reason"
+                    required
+                    defaultValue=""
+                    data-testid="alert-detail-dismiss-reason-select"
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="" disabled>
+                      Select a reason…
+                    </option>
+                    {DISMISS_REASON_CODES.map((code) => (
+                      <option
+                        key={code}
+                        value={code}
+                        data-testid="alert-detail-dismiss-reason-option"
+                        data-reason-code={code}
+                      >
+                        {DISMISS_REASON_LABELS[code] ?? code}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    data-testid="alert-detail-dismiss-confirm-button"
+                    data-action="dismiss-confirm"
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-zinc-700 px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2"
+                  >
+                    Confirm dismiss
+                  </button>
+                </form>
+              </details>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="alert-detail-dismiss-button"
+                  data-action="dismiss"
+                  disabled
+                  aria-disabled="true"
+                  className="inline-flex h-9 cursor-not-allowed items-center justify-center rounded-lg bg-zinc-700/40 px-3 text-sm font-medium text-white/70 shadow-sm"
+                >
+                  Dismiss
+                </button>
+                <span
+                  data-testid="alert-detail-dismiss-locked-hint"
+                  className="text-xs text-muted-foreground"
+                >
+                  Already {statusLabel.toLowerCase()}
+                  {alert.status === "dismissed" && alert.dismissReason
+                    ? ` (${
+                        (DISMISS_REASON_LABELS as Record<string, string>)[
+                          alert.dismissReason
+                        ] ?? alert.dismissReason
+                      })`
+                    : ""}
+                  ; reopen to dismiss again.
+                </span>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

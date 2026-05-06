@@ -895,7 +895,7 @@
         "Verify alert status updates to 'dismissed'",
         "Verify the dismiss reason is recorded"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-006",
