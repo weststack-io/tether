@@ -3651,3 +3651,35 @@ Date: 2026-05-06
 ### Next Priorities
 - SEED-004: Seed sample audit entries showing reviewer actions on alerts beyond the system-created baseline entries added here.
 - Investigate/deflake global integration DB lock behavior so the repository can satisfy the clean-session full-suite expectation consistently.
+
+## Session 75 -- Data Seeding
+Date: 2026-05-06
+
+### Feature Worked On
+- SEED-004: Database seeded with sample audit entries showing reviewer actions on alerts so the audit trail is populated for demo
+- Status: PASSED
+
+### What Was Done
+- Extended [demo-alerts.ts](/mnt/c/repos/weststack/demos/ralph/src/lib/seed/demo-alerts.ts) so three deterministic seeded alerts now receive reviewer audit entries for `accepted`, `dismissed`, and `escalated`, in addition to the existing system `created` entry.
+- Updated the same seed helper to keep the seeded [Alert](/mnt/c/repos/weststack/demos/ralph/src/lib/seed/demo-alerts.ts) rows aligned with the final reviewer action by setting `status`, `dismissReason`, `escalationNote`, and `updatedAt` consistently with the appended audit trail.
+- Added [seed-audit-entries.test.ts](/mnt/c/repos/weststack/demos/ralph/__tests__/integration/seed-audit-entries.test.ts) to verify reviewer actions span multiple alerts, include the required action types, and persist `beforeState` / `afterState` JSON plus notes where applicable.
+- Marked `SEED-004` as passing in [feature_list.json](/mnt/c/repos/weststack/demos/ralph/specs/phase1/feature_list.json).
+
+### Testing
+- Regression checks before implementation:
+  - `npm test -- --runInBand __tests__/integration/seed-demo-alerts.test.ts` -> passed
+  - `npm test -- --runInBand __tests__/integration/alerts-page-detail008.test.ts` -> passed
+- Feature verification:
+  - `npx prisma db seed` -> completed successfully and logged the demo alert + ingestion-run seed results
+  - Direct DB query against `AuditEntry` confirmed reviewer entries for `accepted`, `dismissed`, and `escalated` on multiple `seed-demo-alerts-alt-*` alerts
+  - `npm test -- --runInBand __tests__/integration/seed-audit-entries.test.ts` -> passed
+  - `npm test -- --runInBand __tests__/integration/seed-demo-alerts.test.ts` -> passed after feature changes
+- Clean-session checks:
+  - `npm test` -> 68 suites / 430 tests passed
+
+### Blockers / Issues
+- SQLite timeout failures surfaced only when I manually launched two DB-heavy integration suites in parallel during exploration. The repository’s required sequential/full verification (`npm test`) passed cleanly, so no code change was needed for test-harness stability in this session.
+
+### Next Priorities
+- UI-001: Add a loading indicator or empty-state skeleton for the dashboard while stats load.
+- UI-002: Add empty-state messaging for the alerts list when filters return zero rows.
