@@ -2645,3 +2645,57 @@ Date: 2026-05-06
 - LIST-008: row click-through to /alerts/[id].
 - DETAIL-001..006: alert detail page session.
 - The 5-arg href-builder positional API noted above is now load-bearing for sort/filter composition. After LIST-004 pushes it to 6 args, refactoring to an `AlertsViewState` object would clean up signatures without changing behavior. A small structural improvement, not a regression.
+
+## Session 58 -- Alert List Status Filter
+Date: 2026-05-06
+
+### Feature Worked On
+- LIST-004 (priority 58): Alert list page has a filter bar that filters alerts by status
+- Status: PASSED
+
+### What Was Done
+- Carried over uncommitted work-in-progress from a previous session that had implemented LIST-004 in src/app/alerts/page.tsx and authored __tests__/integration/alerts-page-list004.test.ts but stopped short of running the tests, taking screenshots, marking passes:true, and committing. Verified the implementation, ran the tests, verified manually with Playwright, and finished the session steps.
+- src/app/alerts/page.tsx changes (already in working tree at session start; reviewed and accepted as-is): added STATUS_OPTIONS const + StatusOption type (open/accepted/dismissed/escalated/snoozed), parseStatuses() that mirrors parseRegulators/parseSeverities (CSV split, dedupe via Set, validate against the canonical option set, return null when nothing valid), buildStatusToggleHref() symmetrical to buildRegulatorToggleHref/buildSeverityToggleHref. Threaded the new statuses arg through buildWhere/loadAlerts/buildAlertsHref/buildSortHref/buildRegulatorToggleHref/buildSeverityToggleHref so the chip group composes with sort + regulator + severity filters. Rendered the Status chip group + label inline in the alerts-filter-bar after Severity, with data-filter-status on the bar and data-testid="alerts-filter-status-${st}" + data-active + aria-pressed on each chip. The shared Clear link's href clears all three filter axes (regulator, severity, status). Net +90 lines.
+- __tests__/integration/alerts-page-list004.test.ts (already in working tree at session start; reviewed and accepted as-is): 7 live-UI tests, ~460 lines. Seeds 6 fixtures spanning all 5 statuses (open x2, escalated, accepted, snoozed, dismissed) crossed with regulators (SEC, FINRA, OCC, CFPB) and severities so the triple-axis composition test has both intersection and non-overlap. Asserts: (1) bar renders with one chip per status + no Clear when nothing active; (2) ?status=open narrows to seeded open ids; (3) ?status=open,escalated renders the union; (4) Clear link href has no status= param; (5) sort+status composition (?sortBy=date&status=open preserves both via Clear and Date sort header); (6) status+regulator+severity composition (each chip group's toggle-href preserves the OTHER two axes); (7) invalid status values (?status=queued) are silently dropped.
+
+### Files Modified / Created
+- src/app/alerts/page.tsx (status chip group + parseStatuses + buildStatusToggleHref + statuses threaded through the existing href / where / loader helpers; +90 lines net)
+- __tests__/integration/alerts-page-list004.test.ts (new, 7 tests, ~460 lines)
+- specs/phase1/screenshots/LIST-004-default.png (new full-page Playwright screenshot showing all three chip groups -- Regulator, Severity, Status -- above the 5-row table)
+- specs/phase1/screenshots/LIST-004-open.png (new full-page Playwright screenshot showing the table after clicking the Open chip -- 3 open rows, Open chip filled black, Clear link visible)
+- specs/phase1/feature_list.json (LIST-004 passes -> true)
+
+### Testing
+- Verified all 4 LIST-004 acceptance steps:
+  1. Navigate to http://localhost:3000/alerts: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector". Status chip group renders 5 chips (open/accepted/dismissed/escalated/snoozed) with data-active="false"; no Clear link.
+  2. Select status filter for 'open': clicked the Open chip in Playwright; URL went to /alerts?sortBy=date&sortOrder=desc&status=open; Open chip became data-active="true"; Clear link appeared.
+  3. Verify only open alerts are shown: DOM eval after the click returned 3 rows, all with status="open" -- exactly the 3 seeded open fixtures (SEC/CFPB/OCC) out of the 5 demo rows.
+  4. Clear the filter and verify all alerts return: clicked Clear; URL went to /alerts?sortBy=date&sortOrder=desc; DOM eval returned 5 rows in date-desc order (statuses: open, escalated, open, open, snoozed); Clear link no longer rendered; Open chip back to data-active="false".
+- Test suite results: `npm test` -> 52 suites / 348 tests passing (was 51 / 341; +1 suite / +7 tests for LIST-004). Stable at ~63s. Single LIST-004 file run -> 7/7 passing in ~7s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: dashboard root -> 200; /alerts?regulator=SEC -> 200 with alerts-filter-regulator-SEC chip data-active="true" (LIST-002 still works); /alerts?severity=high -> 200 with alerts-filter-severity-high chip data-active="true" (LIST-003 still works); /alerts?status=open -> 200 with the new alerts-filter-status-open chip data-active="true". INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..005, LIST-001..003 all unchanged.
+- Live Playwright verification:
+  - Seeded 5 demo alerts via scripts/seed-list001-demo.ts (the existing fixture has statuses open x3, escalated x1, snoozed x1 -- adequate for the LIST-004 verification).
+  - Navigated to http://localhost:3000/alerts; snapshot shows all three chip groups (Regulator: SEC/FINRA/CFPB/OCC; Severity: High/Medium/Low; Status: Open/Accepted/Dismissed/Escalated/Snoozed) above the 5-row table.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-004-default.png.
+  - Clicked the Open chip; URL became /alerts?sortBy=date&sortOrder=desc&status=open; table re-rendered with the 3 open rows only; Open chip filled black (active); Clear link appeared.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-004-open.png.
+  - Clicked Clear; URL became /alerts?sortBy=date&sortOrder=desc; all 5 rows returned in date-desc order.
+  - Console: 0 errors, 0 warnings.
+  - Wiped demo data via scripts/wipe-list001-demo.ts (deleted 5 items / 5 policies / 1 run).
+
+### Blockers / Issues
+- Found an uncommitted working tree at session start: src/app/alerts/page.tsx was modified and __tests__/integration/alerts-page-list004.test.ts was untracked. Inspected the diff and the test file -- both implemented LIST-004 cleanly and consistent with LIST-002/003's patterns. Decided to adopt the work rather than revert and reimplement. The previous session's progress notes did not mention LIST-004, so this looks like an interrupted or rolled-back session that left WIP behind.
+- `npx jest <file>` (without `npm test`) fails with "Cannot use 'import.meta' outside a module" because the script needs NODE_OPTIONS=--experimental-vm-modules from the npm test script to load src/generated/prisma/client.ts via ESM. Resolved by always running tests through `npm test`. (Same caveat applies to LIST-002 and LIST-003 -- not new this session.)
+- The buildAlertsHref / buildSortHref / buildRegulatorToggleHref / buildSeverityToggleHref / buildStatusToggleHref signatures are now a 6-arg shape (sortBy, sortOrder, regulators, severities, statuses) -- positional and starting to feel cramped. As Session 57 noted, LIST-005 (domain) will push it to 7 args; that's the right point to refactor to a single `AlertsViewState` object. Not done this session because the in-tree pattern is positional and the brief is "extend, don't refactor".
+- Status chip group fits on one row at desktop width but wraps onto a second row at narrower viewport widths (visible in the LIST-004-default screenshot, where Snoozed wraps below the others on the 1280-wide screenshot canvas). Acceptable for the demo; LIST-005's 10-domain group will make this more pronounced.
+- The aria-pressed-on-anchor caveat continues from LIST-002/003: ARIA spec defines aria-pressed on `<button>`; using it on `<a>` is a minor a11y compromise inherited from the URL-driven nav design. Same trade-off; if a future a11y pass calls it out, swapping to a `<form>` with hidden inputs is the right move.
+- Per-status count badges ("Open (12)") were skipped, mirroring LIST-002 and LIST-003.
+- Screenshots show the same Next.js dev-tools "N" overlay near the bottom-left as Sessions 55-57's screenshots; production builds don't render it.
+
+### Next Priorities
+- LIST-005 (priority 59): domain filter (?domain=bsa_aml,...). 10 distinct domain values -- the largest group yet. Likely the right point to extract a shared `FilterChipGroup` component or to consider a "More..." dropdown. The existing DOMAIN_LABELS map already covers display formatting.
+- LIST-006 (priority 60): date range filter (?dateFrom=&dateTo=). Different shape (two date inputs, not a chip group); /api/alerts already accepts both bounds so it's pure UI.
+- LIST-007: pagination (?page=) -- "Page X of Y" + prev/next links.
+- LIST-008: row click-through to /alerts/[id].
+- DETAIL-001..006: alert detail page session.
+- The 6-arg href-builder positional API is now load-bearing for the sort + 3-filter composition. After LIST-005 pushes it to 7 args, refactoring to an `AlertsViewState` object would clean up signatures without changing behavior. A small structural improvement, not a regression.
