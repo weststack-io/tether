@@ -614,7 +614,7 @@
         "Verify an AuditEntry was created with action='snoozed'",
         "Send POST without snoozeUntil and verify it returns a validation error"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-011",

@@ -4,9 +4,9 @@ import prisma from "@/lib/db";
 const ACCEPT = "accept";
 const DISMISS = "dismiss";
 const ESCALATE = "escalate";
+const SNOOZE = "snooze";
 
-// API-007 (accept) + API-008 (dismiss) + API-009 (escalate). The snooze action
-// rejects as 400 until API-010 lands.
+// API-007 (accept) + API-008 (dismiss) + API-009 (escalate) + API-010 (snooze).
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -32,7 +32,12 @@ export async function POST(
     );
   }
 
-  if (action !== ACCEPT && action !== DISMISS && action !== ESCALATE) {
+  if (
+    action !== ACCEPT &&
+    action !== DISMISS &&
+    action !== ESCALATE &&
+    action !== SNOOZE
+  ) {
     return NextResponse.json(
       { error: `Unsupported action: ${action}` },
       { status: 400 },
@@ -63,6 +68,31 @@ export async function POST(
     escalationNote = rawNote.trim();
   }
 
+  let snoozeUntil: Date | null = null;
+  if (action === SNOOZE) {
+    const rawSnoozeUntil = payload.snoozeUntil;
+    if (typeof rawSnoozeUntil !== "string" || rawSnoozeUntil.trim().length === 0) {
+      return NextResponse.json(
+        { error: "Missing 'snoozeUntil' for snooze action" },
+        { status: 400 },
+      );
+    }
+    const parsed = new Date(rawSnoozeUntil);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json(
+        { error: "'snoozeUntil' must be a valid ISO date string" },
+        { status: 400 },
+      );
+    }
+    if (parsed.getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: "'snoozeUntil' must be in the future" },
+        { status: 400 },
+      );
+    }
+    snoozeUntil = parsed;
+  }
+
   try {
     const existing = await prisma.alert.findUnique({ where: { id } });
     if (!existing) {
@@ -77,21 +107,30 @@ export async function POST(
         ? "accepted"
         : action === DISMISS
           ? "dismissed"
-          : "escalated";
+          : action === ESCALATE
+            ? "escalated"
+            : "snoozed";
     const beforeState = JSON.stringify({ status: existing.status });
     const afterState =
       action === DISMISS
         ? JSON.stringify({ status: nextStatus, dismissReason: reason })
         : action === ESCALATE
           ? JSON.stringify({ status: nextStatus, escalationNote })
-          : JSON.stringify({ status: nextStatus });
+          : action === SNOOZE
+            ? JSON.stringify({
+                status: nextStatus,
+                snoozeUntil: snoozeUntil!.toISOString(),
+              })
+            : JSON.stringify({ status: nextStatus });
 
     const updateData =
       action === DISMISS
         ? { status: nextStatus, dismissReason: reason }
         : action === ESCALATE
           ? { status: nextStatus, escalationNote }
-          : { status: nextStatus };
+          : action === SNOOZE
+            ? { status: nextStatus, snoozeUntil }
+            : { status: nextStatus };
 
     const auditNote =
       action === DISMISS ? reason : action === ESCALATE ? escalationNote : null;
