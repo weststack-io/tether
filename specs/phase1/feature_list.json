@@ -693,7 +693,7 @@
         "Verify SEC, FINRA, CFPB, and OCC are all represented",
         "Verify counts match the database"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DASH-004",

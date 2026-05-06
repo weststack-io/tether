@@ -10,6 +10,7 @@ import { TriggerIngestionButton } from "@/components/dashboard/TriggerIngestionB
 export const dynamic = "force-dynamic";
 
 type SeverityKey = "high" | "medium" | "low";
+type RegulatorKey = "SEC" | "FINRA" | "CFPB" | "OCC";
 
 const SEVERITY_CARDS: Array<{
   key: SeverityKey;
@@ -39,6 +40,17 @@ const SEVERITY_CARDS: Array<{
   },
 ];
 
+const REGULATOR_CARDS: Array<{
+  key: RegulatorKey;
+  label: string;
+  description: string;
+}> = [
+  { key: "SEC", label: "SEC", description: "Securities and Exchange Commission" },
+  { key: "FINRA", label: "FINRA", description: "Financial Industry Regulatory Authority" },
+  { key: "CFPB", label: "CFPB", description: "Consumer Financial Protection Bureau" },
+  { key: "OCC", label: "OCC", description: "Office of the Comptroller of the Currency" },
+];
+
 async function getOpenAlertSeverityCounts(): Promise<Record<SeverityKey, number>> {
   const rows = await prisma.alert.groupBy({
     by: ["severity"],
@@ -54,11 +66,29 @@ async function getOpenAlertSeverityCounts(): Promise<Record<SeverityKey, number>
   return counts;
 }
 
+async function getOpenAlertRegulatorCounts(): Promise<Record<RegulatorKey, number>> {
+  const rows = await prisma.alert.findMany({
+    where: { status: "open" },
+    select: { regulatoryItem: { select: { regulator: true } } },
+  });
+  const counts: Record<RegulatorKey, number> = { SEC: 0, FINRA: 0, CFPB: 0, OCC: 0 };
+  for (const row of rows) {
+    const reg = row.regulatoryItem.regulator;
+    if (reg === "SEC" || reg === "FINRA" || reg === "CFPB" || reg === "OCC") {
+      counts[reg] += 1;
+    }
+  }
+  return counts;
+}
+
 export default async function DashboardPage() {
-  const counts = await getOpenAlertSeverityCounts();
+  const [severityCounts, regulatorCounts] = await Promise.all([
+    getOpenAlertSeverityCounts(),
+    getOpenAlertRegulatorCounts(),
+  ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Dashboard</h1>
@@ -87,7 +117,7 @@ export default async function DashboardPage() {
                 className={`font-heading text-4xl font-semibold tabular-nums ${card.countClass}`}
                 data-testid={`severity-count-${card.key}`}
               >
-                {counts[card.key]}
+                {severityCounts[card.key]}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 open alerts
@@ -96,6 +126,38 @@ export default async function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="font-heading text-lg font-semibold">By regulator</h2>
+          <p className="text-sm text-muted-foreground">
+            Open alerts grouped by source regulator
+          </p>
+        </div>
+        <div
+          className="grid grid-cols-2 gap-4 sm:grid-cols-4"
+          data-testid="regulator-cards"
+        >
+          {REGULATOR_CARDS.map((card) => (
+            <Card key={card.key} data-regulator={card.key}>
+              <CardHeader>
+                <CardTitle>{card.label}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="font-heading text-4xl font-semibold tabular-nums"
+                  data-testid={`regulator-count-${card.key}`}
+                >
+                  {regulatorCounts[card.key]}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {card.description}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
