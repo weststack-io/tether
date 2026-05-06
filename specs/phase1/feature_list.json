@@ -1018,7 +1018,7 @@
         "Verify a spinner or skeleton UI is shown during data fetch",
         "Verify the loading state transitions to the data view once loaded"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "UI-002",
