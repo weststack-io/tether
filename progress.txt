@@ -2424,3 +2424,83 @@ Date: 2026-05-06
 - LIST-007..008: pagination controls and "view detail" navigation row link.
 - DETAIL-001..006: alert-detail page session.
 - Potential infra (still wished-for): a "demo data seeder" CLI / API route so screenshots aren't dominated by zeros for severity / regulator / domain. With the demo dashboard now feature-complete, a non-zero seeded screenshot would show the design at its best.
+
+## Session 55 -- Alert List Sortable Table
+Date: 2026-05-06
+
+### Feature Worked On
+- LIST-001 (priority 55): Alert list page (/alerts) displays a sortable table with columns Severity / Classification / Regulator / Policy Domain / Date Detected / Status; clicking a column header re-sorts the table.
+- Status: PASSED
+
+### What Was Done
+- Replaced the placeholder src/app/alerts/page.tsx (was "Alert List — coming soon") with a full server-component implementation.
+- Reads `searchParams: Promise<...>` per Next 16 conventions; `sortBy` is one of severity/classification/regulator/domain/date/status, `sortOrder` is asc|desc; defaults are date desc.
+- Parses + validates query params via parseSortBy() / parseSortOrder() (string|string[]|undefined-safe).
+- Calls prisma directly (server component, like the dashboard) -- avoids a localhost->/api/alerts hop.
+- Severity-sort path uses the same custom rank (high=0 < medium=1 < low=2) as src/app/api/alerts/route.ts: fetch then sort in JS, with createdAt DESC as a stable tiebreaker. All other axes go through Prisma's typed orderBy.
+- Renders a `<table data-testid="alerts-table" data-sort-by=... data-sort-order=...>` with six `<th>` headers; each header is a `<Link>` whose href is computed by buildSortHref() -- toggles direction if the column is already active, otherwise selects the column with its natural default (desc for severity/date/status; asc for classification/regulator/domain).
+- Active column shows a small ▲/▼ indicator next to its label; aria-sort="ascending|descending|none" on each `<th>` for accessibility.
+- Table rows render with severity + status as colored pills (matching the prior dashboard pill scheme), domain + classification labels via human-readable label maps (e.g., bsa_aml -> "BSA/AML", drifted -> "Drifted").
+- Date Detected uses the same UTC `YYYY-MM-DD HH:MM:SSZ` format as DASH-005's recent-runs table for SSR/CSR parity (no toLocaleString hydration mismatch).
+- Each row carries `data-alert-id={alert.id}` and per-cell `data-testid` markers (alerts-cell-severity / -classification / -regulator / -domain / -date / -status), with the underlying value also exposed as a `data-*` attribute on the `<td>` itself (so test scrapers don't have to traverse into the inner pill `<span>`).
+- Empty-state branch: when alerts.length === 0 the Card shows a `data-testid="alerts-empty"` placeholder ("No alerts to show. Trigger an ingestion run from the dashboard.") instead of a header-only table shell.
+- Why server-component + URL search params over a client-component fetch: deep-linking (sorted state survives reload, can be bookmarked/shared); no extra network hop; no client-side state management; matches the existing dashboard pattern.
+- Why a server-rendered `<Link>` instead of an onClick handler: the `<Link>` triggers a client-side navigation that re-renders the server component with the new searchParams -- visually identical UX but no client JS, no hydration, no race condition between sort UI state and fetched data.
+- Why the natural-default-direction logic (desc for severity/date/status, asc for the alphabetic axes): clicking "Severity" should land on high-first (most useful default for an alerts triage UI); clicking "Regulator" alphabetically (CFPB, FINRA, OCC, SEC) is more familiar than reverse-alpha. Saves the reviewer a second click in the common case.
+- Why include `data-sort-by` and `data-sort-order` as attributes on the `<table>` itself: lets the integration test assert on the rendered sort state without parsing the query string out of the URL or scanning header indicator chars.
+- Why store the seeded values redundantly on the `<td>` (both as visible text and as a `data-*` attribute): visible text uses the human label ("Drifted", "BSA/AML"); the data-attribute carries the raw value ("drifted", "bsa_aml") so tests can assert the raw enum without a label-table lookup. First version had data-* on the inner pill `<span>` and the test regex couldn't span past the `<td>`s closing `>`; moving it onto the `<td>` made the markup uniform across every column and the test regex became trivial.
+- Decision: did NOT add row click-through to /alerts/[id]. That's LIST-008 (priority 62) -- a separate feature.
+- Decision: did NOT add filter UI. That's LIST-002..006 (priorities 56-60) -- separate features.
+- Decision: did NOT add pagination controls. That's LIST-007 (priority 61) -- separate feature. The page currently fetches and renders all alerts; with the dev DB at 0-5 alerts this is fine, and pagination's "all rows fit on one page" behavior would be visually identical anyway.
+- Decision: did NOT add an "Actions" column. The alert detail page (DETAIL-001..) hosts the per-alert action bar; the spec's mention of "Actions" in the column list is more naturally handled by row navigation (LIST-008) plus the detail-page action bar.
+- Decision: did NOT extract the table into src/components/alerts/AlertList.tsx. Same trade-off as the dashboard's recent-runs table (DASH-005): single-use server-rendered table, no client-side state -> inlining keeps the file readable. Extraction is a future visual-polish concern.
+- Authored __tests__/integration/alerts-page-list001.test.ts (6 tests, ~310 lines). Seeds 6 alerts spanning every sortable axis under tag "list001-verify" with future-anchored createdAt values. Verifies: (1) all six column headers render with sort links; (2) seeded alerts appear with correct per-cell values; (3) default sort is date desc; (4) `?sortBy=severity&sortOrder=desc` yields high < medium < low (with date-desc tiebreaker); (5) `?sortBy=regulator&sortOrder=asc` is alpha; (6) `?sortBy=domain&sortOrder=asc` is alpha; (7) header `<Link>`s carry the correct sortBy/sortOrder query params (with HTML-entity-encoded `&amp;` accommodated). afterAll deletes only seeded ids.
+- Wrote scripts/seed-list001-demo.ts and scripts/wipe-list001-demo.ts as throwaway fixtures for the manual / Playwright screenshots. Both run via `node --no-warnings --experimental-strip-types script.ts` (Node 24.15 native TS stripping). Each instantiates a PrismaClient with PrismaLibSql adapter (mirroring src/lib/db.ts) so they don't pull in the env-validating wrapper. Both scoped by the title prefix "list001-demo " so a partial wipe stays surgical.
+
+### Files Modified / Created
+- src/app/alerts/page.tsx (was a 7-line placeholder; now ~270 lines: SortField/SortOrder types, parseSortBy/parseSortOrder, buildPrismaOrderBy, ALERT_INCLUDE, loadAlerts, formatDateDetected, buildSortHref, sortIndicator, AlertsPage server component with the table render + empty-state branch).
+- __tests__/integration/alerts-page-list001.test.ts (new, 6 tests, ~310 lines).
+- scripts/seed-list001-demo.ts (new, ~75 lines; throwaway fixture for screenshots).
+- scripts/wipe-list001-demo.ts (new, ~45 lines; companion cleanup).
+- specs/phase1/screenshots/LIST-001-default.png (new full-page Playwright screenshot showing the table at default sort -- date desc).
+- specs/phase1/screenshots/LIST-001-sorted-severity.png (new full-page Playwright screenshot showing the table after clicking the Severity header -- high then medium then low, with the ▼ indicator on Severity).
+- specs/phase1/feature_list.json (LIST-001 passes -> true).
+
+### Testing
+- Verified all 4 LIST-001 acceptance steps:
+  1. Navigate to http://localhost:3000/alerts: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector".
+  2. Table is displayed with all required columns: Playwright accessibility snapshot shows the `<table>` with six `<columnheader>`s -- "Severity", "Classification", "Regulator", "Policy Domain", "Date Detected", "Status"; integration test asserts each `data-testid="alerts-sort-{key}"` for all six.
+  3. Alerts from the database are shown in the table: with 5 demo alerts seeded via scripts/seed-list001-demo.ts, Playwright snapshot shows all 5 rows with the seeded severity/classification/regulator/domain/status/date values; integration test cross-checks per-fixture cell values via the `data-*` attributes.
+  4. Click a column header and the table re-sorts: clicked the Severity header in Playwright; URL changed to /alerts?sortBy=severity&sortOrder=desc; subsequent DOM eval confirmed the row order high (×2) then medium (×2) then low (×1) with the createdAt-desc tiebreaker correctly applied within each rank; integration test additionally exercises sortBy=regulator and sortBy=domain alpha sorts.
+- Test suite results: `npm test` -> 49 suites / 328 tests passing (was 48 / 322; +1 suite / +6 tests for LIST-001). Stable at ~59s.
+- Regression: `npx tsc --noEmit` -> zero errors after clearing a stale `.next/dev/types/validator.ts` (Next.js dev-server type-validator cache got crossed when the dev server was restarted mid-edit; regenerated cleanly). Pre-flight curl regression: dashboard root -> 200 with all data-testid markers (severity-cards, regulator-cards, domain-cards, recent-runs-table) intact; /api/alerts -> 200; /api/dashboard/stats -> 200. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..005 all unchanged.
+- Live Playwright verification:
+  - Seeded 5 demo alerts (manual seed script under tag "list001-demo" with mixed severity/regulator/domain/status values).
+  - Navigated to http://localhost:3000/alerts, snapshot shows the 6-column table populated with the 5 seeded rows in date-desc order.
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-001-default.png.
+  - Clicked the Severity column header, URL went to /alerts?sortBy=severity&sortOrder=desc, table re-rendered with rows in high/high/medium/medium/low order; ▼ indicator now appears next to "SEVERITY".
+  - Saved full-page screenshot to specs/phase1/screenshots/LIST-001-sorted-severity.png.
+  - DOM eval confirmed the in-rank tiebreaker: among the two `high` rows, the more-recent-by-date came first (2026-05-05 before 2026-04-24); among the two `medium` rows, 2026-05-03 before 2026-04-18.
+  - Console: 0 errors, 0 warnings.
+  - Wiped demo data via scripts/wipe-list001-demo.ts (deleted 5 items / 5 policies / 1 run); navigated back to /alerts; the empty-state Card with `data-testid="alerts-empty"` and "No alerts to show. Trigger an ingestion run from the dashboard." rendered correctly.
+
+### Blockers / Issues
+- The first integration-test run failed because `data-severity` / `data-status` were initially placed on the inner pill `<span>` -- the row-extraction regex couldn't span across the `<td>`s closing `>`. Moved both attributes onto the `<td>` itself (so the same `<td>` carries both `data-testid` and the raw enum value). Made markup uniform across all six columns and is what the existing dashboard tests do too. Test then passed.
+- Initial seed-list001-demo.ts errored "PrismaClient needs to be constructed with a non-empty, valid PrismaClientOptions" because the project uses the libSQL driver adapter (PrismaLibSql) -- not the default driver. Mirrored src/lib/db.ts: instantiate PrismaClient with `{ adapter: new PrismaLibSql({ url: DATABASE_URL }) }`. The wipe script needed the same fix.
+- TypeScript-stripping path: Node 24.15 supports `--experimental-strip-types` natively, which is the only way to import the .ts-extension-using generated PrismaClient (`src/generated/prisma/client.ts`) directly from a node script without a transpiler. ts-node isn't installed and tsx isn't either. The `--no-warnings` flag suppresses the experimental-feature notices on every run.
+- Dev-server cache staleness as noted in Sessions 44-54: `./scripts/dev-up.sh` was needed once after editing src/app/alerts/page.tsx and once more after the `data-severity`/`data-status` attribute move; the new section's data-* markers weren't appearing on the first GET after each edit. Same recurring issue, same documented workaround. The Next.js dev-server type-validator file (.next/dev/types/validator.ts) also went corrupt mid-restart and required `rm -rf .next/dev/types` before tsc would pass; regenerated automatically on the next request.
+- The integration test is "live-UI" (depends on the dev server being up on :3000). Same caveat as DASH-001..005.
+- The screenshots show a small "N" overlay near the bottom-left corner -- that's the Next.js dev-tools button (rendered automatically by Next 16 in dev mode). It does NOT appear in production builds.
+- Default sort fetches *all* alerts (no `take`/`skip` clauses). With the dev DB at 0-5 alerts this is fine; for a 1000-alert demo it'd still be sub-second on SQLite per the spec's perf target. Pagination (LIST-007) is the natural follow-up that makes the take/skip explicit.
+- The active-column ▲/▼ Unicode glyphs render slightly differently across fonts; on the demo screenshots they're shown as a small rotated triangle. A future visual-polish session could swap them for a proper SVG icon if the look matters.
+
+### Next Priorities
+- LIST-002 (priority 56): Alert list filter bar that filters alerts by regulator. The /api/alerts endpoint already accepts `?regulator=SEC,FINRA,...` (CSV) -- LIST-002 is pure UI: a multi-select chip group above the table whose selections push to ?regulator=... in the URL. Server-component re-renders, same shape as LIST-001's sort.
+- LIST-003 (priority 57): same shape, severity filter (`?severity=high,medium,low`).
+- LIST-004 (priority 58): same shape, status filter (`?status=open,escalated,...`).
+- LIST-005 (priority 59): same shape, domain filter.
+- LIST-006 (priority 60): date range filter (`?dateFrom=&dateTo=`); slightly different UX -- two date inputs.
+- LIST-007 (priority 61): pagination -- "Page X of Y" + prev/next links pushing `?page=`.
+- LIST-008 (priority 62): row click-through to /alerts/[id] (currently the row has no `<Link>` wrap; would wrap each `<tr>` in a Link or attach onClick that pushes to /alerts/{id}).
+- DETAIL-001..006: alert-detail page session.
+- The seed-list001-demo.ts script is intentionally specific to LIST-001 screenshots; once LIST-002..008 land, generalizing it into a more flexible "demo data" CLI (parameterized count + axis distributions) would make every UI session's screenshots better than 0/0/0. Same wish-list item as Sessions 50/52/53/54.
