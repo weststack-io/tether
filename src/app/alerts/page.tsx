@@ -69,6 +69,9 @@ const COLUMNS: Array<{ key: SortField; label: string; align?: "left" | "right" }
   { key: "status", label: "Status" },
 ];
 
+const REGULATOR_OPTIONS = ["SEC", "FINRA", "CFPB", "OCC"] as const;
+type RegulatorOption = (typeof REGULATOR_OPTIONS)[number];
+
 function parseSortBy(raw: string | string[] | undefined): SortField {
   const v = Array.isArray(raw) ? raw[0] : raw;
   if (v && (SORT_FIELDS as readonly string[]).includes(v)) {
@@ -80,6 +83,23 @@ function parseSortBy(raw: string | string[] | undefined): SortField {
 function parseSortOrder(raw: string | string[] | undefined): SortOrder {
   const v = Array.isArray(raw) ? raw[0] : raw;
   return v === "asc" ? "asc" : "desc";
+}
+
+// Parse `?regulator=SEC,FINRA` into a deduped, validated array of regulators.
+// Values not in REGULATOR_OPTIONS are dropped. Returns null when no valid
+// regulators are selected so callers can short-circuit the where-clause.
+function parseRegulators(
+  raw: string | string[] | undefined,
+): RegulatorOption[] | null {
+  const flat = Array.isArray(raw) ? raw.join(",") : raw;
+  if (!flat) return null;
+  const valid = new Set<string>(REGULATOR_OPTIONS);
+  const picked = new Set<RegulatorOption>();
+  for (const part of flat.split(",")) {
+    const v = part.trim();
+    if (valid.has(v)) picked.add(v as RegulatorOption);
+  }
+  return picked.size > 0 ? [...picked] : null;
 }
 
 function buildPrismaOrderBy(
@@ -125,15 +145,26 @@ type AlertRow = {
   };
 };
 
+function buildWhere(regulators: RegulatorOption[] | null): Record<string, unknown> {
+  const where: Record<string, unknown> = {};
+  if (regulators) {
+    where.regulatoryItem = { regulator: { in: regulators } };
+  }
+  return where;
+}
+
 async function loadAlerts(
   sortBy: SortField,
   sortOrder: SortOrder,
+  regulators: RegulatorOption[] | null,
 ): Promise<AlertRow[]> {
+  const where = buildWhere(regulators);
   if (sortBy === "severity") {
     // Severity uses a custom rank (high < medium < low) that Prisma's typed
     // orderBy can't express, so fetch then sort in JS. Mirrors the API-005
     // approach in src/app/api/alerts/route.ts.
     const rows = (await prisma.alert.findMany({
+      where,
       include: ALERT_INCLUDE,
     })) as AlertRow[];
     return [...rows].sort((a, b) => {
@@ -147,6 +178,7 @@ async function loadAlerts(
   }
   const orderBy = buildPrismaOrderBy(sortBy, sortOrder)!;
   return (await prisma.alert.findMany({
+    where,
     orderBy,
     include: ALERT_INCLUDE,
   })) as AlertRow[];
@@ -156,14 +188,30 @@ function formatDateDetected(d: Date): string {
   return d.toISOString().replace("T", " ").slice(0, 19) + "Z";
 }
 
+function buildAlertsHref(
+  sortBy: SortField,
+  sortOrder: SortOrder,
+  regulators: RegulatorOption[] | null,
+): string {
+  const params = new URLSearchParams();
+  params.set("sortBy", sortBy);
+  params.set("sortOrder", sortOrder);
+  if (regulators && regulators.length > 0) {
+    params.set("regulator", regulators.join(","));
+  }
+  return `/alerts?${params.toString()}`;
+}
+
 function buildSortHref(
   column: SortField,
   currentSortBy: SortField,
   currentSortOrder: SortOrder,
+  regulators: RegulatorOption[] | null,
 ): string {
   // Clicking the active column toggles direction. Clicking a different column
   // selects it with the column's natural default direction (desc for date /
-  // severity / status; asc for the alphabetic axes).
+  // severity / status; asc for the alphabetic axes). The active regulator
+  // filter, if any, is preserved across sort changes.
   let nextOrder: SortOrder;
   if (column === currentSortBy) {
     nextOrder = currentSortOrder === "desc" ? "asc" : "desc";
@@ -173,10 +221,23 @@ function buildSortHref(
         ? "desc"
         : "asc";
   }
-  const params = new URLSearchParams();
-  params.set("sortBy", column);
-  params.set("sortOrder", nextOrder);
-  return `/alerts?${params.toString()}`;
+  return buildAlertsHref(column, nextOrder, regulators);
+}
+
+function buildRegulatorToggleHref(
+  reg: RegulatorOption,
+  active: RegulatorOption[] | null,
+  sortBy: SortField,
+  sortOrder: SortOrder,
+): string {
+  // Toggle membership of `reg` in the active filter set, preserving sort.
+  // Order within the resulting CSV mirrors REGULATOR_OPTIONS order so the
+  // URL is deterministic regardless of click sequence.
+  const set = new Set<RegulatorOption>(active ?? []);
+  if (set.has(reg)) set.delete(reg);
+  else set.add(reg);
+  const next = REGULATOR_OPTIONS.filter((r) => set.has(r));
+  return buildAlertsHref(sortBy, sortOrder, next.length > 0 ? next : null);
 }
 
 function sortIndicator(
@@ -196,7 +257,9 @@ export default async function AlertsPage({
   const params = await searchParams;
   const sortBy = parseSortBy(params.sortBy);
   const sortOrder = parseSortOrder(params.sortOrder);
-  const alerts = await loadAlerts(sortBy, sortOrder);
+  const regulators = parseRegulators(params.regulator);
+  const alerts = await loadAlerts(sortBy, sortOrder, regulators);
+  const hasActiveFilter = regulators !== null && regulators.length > 0;
 
   return (
     <div className="space-y-6">
@@ -207,6 +270,44 @@ export default async function AlertsPage({
         </p>
       </div>
 
+      <div
+        className="flex flex-wrap items-center gap-2"
+        data-testid="alerts-filter-bar"
+        data-filter-regulator={regulators ? regulators.join(",") : ""}
+      >
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+          Regulator
+        </span>
+        {REGULATOR_OPTIONS.map((reg) => {
+          const isActive = regulators?.includes(reg) ?? false;
+          return (
+            <Link
+              key={reg}
+              href={buildRegulatorToggleHref(reg, regulators, sortBy, sortOrder)}
+              data-testid={`alerts-filter-regulator-${reg}`}
+              data-active={isActive ? "true" : "false"}
+              aria-pressed={isActive}
+              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground ring-primary"
+                  : "bg-muted text-muted-foreground ring-border hover:bg-accent hover:text-accent-foreground"
+              }`}
+            >
+              {reg}
+            </Link>
+          );
+        })}
+        {hasActiveFilter && (
+          <Link
+            href={buildAlertsHref(sortBy, sortOrder, null)}
+            data-testid="alerts-filter-clear"
+            className="ml-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Clear
+          </Link>
+        )}
+      </div>
+
       <Card>
         <CardContent className="p-0">
           {alerts.length === 0 ? (
@@ -214,7 +315,9 @@ export default async function AlertsPage({
               className="p-6 text-sm text-muted-foreground"
               data-testid="alerts-empty"
             >
-              No alerts to show. Trigger an ingestion run from the dashboard.
+              {hasActiveFilter
+                ? "No alerts match the current filter."
+                : "No alerts to show. Trigger an ingestion run from the dashboard."}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -242,7 +345,12 @@ export default async function AlertsPage({
                           }
                         >
                           <Link
-                            href={buildSortHref(col.key, sortBy, sortOrder)}
+                            href={buildSortHref(
+                              col.key,
+                              sortBy,
+                              sortOrder,
+                              regulators,
+                            )}
                             className="inline-flex items-center gap-1 hover:text-foreground"
                             data-testid={`alerts-sort-${col.key}`}
                             data-active={isActive ? "true" : "false"}

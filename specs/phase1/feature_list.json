@@ -746,7 +746,7 @@
         "Verify only SEC alerts are shown in the table",
         "Clear the filter and verify all alerts return"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LIST-003",
