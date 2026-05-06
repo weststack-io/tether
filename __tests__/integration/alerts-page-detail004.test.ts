@@ -245,9 +245,26 @@ describe("DETAIL-004 alert detail accept button (live UI)", () => {
     // Open status -> button is enabled (no disabled attribute on the opening tag).
     expect(/(?<=\s)disabled(\s|=|>)/.test(acceptOpening!)).toBe(false);
 
-    // Audit history starts empty (no actions taken yet).
+    // DETAIL-008: the timeline synthesizes a "created" pseudo-row from
+    // alert.createdAt whenever the DB has no real audit entries, so the
+    // empty-state placeholder no longer renders. Instead we assert the
+    // synthesized created row is the only entry on a fresh alert.
     const auditEmpty = findTagOpening(html, "alert-detail-audit-empty");
-    expect(auditEmpty).not.toBeNull();
+    expect(auditEmpty).toBeNull();
+
+    const auditList = findTagOpening(html, "alert-detail-audit-list");
+    expect(auditList).not.toBeNull();
+    expect(auditList!).toContain('data-audit-count="1"');
+    expect(auditList!).toContain('data-audit-synthetic-created="true"');
+
+    const initialEntries = findAllTagOpenings(
+      html,
+      "alert-detail-audit-entry",
+    );
+    expect(initialEntries.length).toBe(1);
+    expect(initialEntries[0]!).toContain('data-action="created"');
+    expect(initialEntries[0]!).toContain('data-actor="system"');
+    expect(initialEntries[0]!).toContain('data-synthetic="true"');
   });
 
   it("transitions status to 'accepted' when the Accept server action runs", async () => {
@@ -296,16 +313,23 @@ describe("DETAIL-004 alert detail accept button (live UI)", () => {
 
     const auditList = findTagOpening(html, "alert-detail-audit-list");
     expect(auditList).not.toBeNull();
-    expect(auditList!).toContain('data-audit-count="1"');
+    // DETAIL-008: a synthesized "created" pseudo-row is prepended to the
+    // timeline whenever the DB doesn't carry a real `action: "created"`
+    // entry, so the count is 2 (the accepted action + the synthesized
+    // created event from alert.createdAt).
+    expect(auditList!).toContain('data-audit-count="2"');
 
     // Empty-state placeholder is gone now that an entry exists.
     const auditEmpty = findTagOpening(html, "alert-detail-audit-empty");
     expect(auditEmpty).toBeNull();
 
     const entries = findAllTagOpenings(html, "alert-detail-audit-entry");
-    expect(entries.length).toBe(1);
-    const entry = entries[0]!;
-    expect(entry).toContain('data-action="accepted"');
-    expect(entry).toContain('data-actor="reviewer"');
+    expect(entries.length).toBe(2);
+    // Newest-first: the accepted action is at index 0, the created event
+    // (oldest) sits at index 1.
+    expect(entries[0]!).toContain('data-action="accepted"');
+    expect(entries[0]!).toContain('data-actor="reviewer"');
+    expect(entries[1]!).toContain('data-action="created"');
+    expect(entries[1]!).toContain('data-actor="system"');
   });
 });

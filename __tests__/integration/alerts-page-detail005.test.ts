@@ -347,12 +347,16 @@ describe("DETAIL-005 alert detail dismiss button (live UI)", () => {
 
     const auditList = findTagOpening(html, "alert-detail-audit-list");
     expect(auditList).not.toBeNull();
-    expect(auditList!).toContain('data-audit-count="1"');
+    // DETAIL-008: timeline now includes a synthesized "created" pseudo-row
+    // (alert.createdAt) whenever the DB lacks a real `action: "created"`
+    // entry. Count is 2 (dismissed action + created event), newest first.
+    expect(auditList!).toContain('data-audit-count="2"');
 
     const entries = findAllTagOpenings(html, "alert-detail-audit-entry");
-    expect(entries.length).toBe(1);
-    const entry = entries[0]!;
-    expect(entry).toContain('data-action="dismissed"');
-    expect(entry).toContain('data-actor="reviewer"');
+    expect(entries.length).toBe(2);
+    expect(entries[0]!).toContain('data-action="dismissed"');
+    expect(entries[0]!).toContain('data-actor="reviewer"');
+    expect(entries[1]!).toContain('data-action="created"');
+    expect(entries[1]!).toContain('data-actor="system"');
   });
 });

@@ -60,6 +60,30 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   reopened: "Reopened",
 };
 
+// DETAIL-008: timeline marker palette per action — pairs the audit dot color
+// with the corresponding status badge so a glance at the timeline communicates
+// the same visual grammar as the action bar (Accept=emerald, Escalate=red,
+// Dismiss=zinc, Snooze=amber, Created=blue/system, Reopened=slate).
+const AUDIT_ACTION_DOT_CLASS: Record<string, string> = {
+  created: "bg-blue-500 ring-blue-200 dark:bg-blue-400 dark:ring-blue-900",
+  accepted:
+    "bg-emerald-500 ring-emerald-200 dark:bg-emerald-400 dark:ring-emerald-900",
+  dismissed: "bg-zinc-500 ring-zinc-200 dark:bg-zinc-400 dark:ring-zinc-800",
+  escalated: "bg-red-500 ring-red-200 dark:bg-red-400 dark:ring-red-900",
+  snoozed: "bg-amber-500 ring-amber-200 dark:bg-amber-400 dark:ring-amber-900",
+  reopened:
+    "bg-slate-500 ring-slate-200 dark:bg-slate-400 dark:ring-slate-800",
+};
+
+function formatAuditTimestamp(d: Date): string {
+  // YYYY-MM-DD HH:MM UTC — readable to a reviewer at a glance, still
+  // unambiguous (no locale-dependent month-day swap), still testable as a
+  // substring of the rendered HTML. The full ISO is preserved on the <time>
+  // element's dateTime attribute for tooling / programmatic access.
+  const iso = d.toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}
+
 const CLASSIFICATION_BADGE_CLASS: Record<string, string> = {
   aligned:
     "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900",
@@ -190,6 +214,52 @@ export default async function AlertDetailPage({
   const tomorrowIso = tomorrowUtc.toISOString().slice(0, 10);
   const snoozeUntilIso = alert.snoozeUntil?.toISOString() ?? null;
   const snoozeUntilDate = snoozeUntilIso?.slice(0, 10) ?? null;
+
+  // DETAIL-008: build the timeline rows. The detector creates a real
+  // `action: "created"` AuditEntry in the per-alert transaction, but seeded
+  // alerts and any legacy data may not have one. Synthesize a "created"
+  // pseudo-row from `alert.createdAt` whenever the DB doesn't already carry
+  // one so the timeline always shows an initial system event (per app_spec
+  // §10 every state change creates an entry; the alert's birth is the
+  // implicit first event). Synthesized rows are read-only — they never get
+  // an id, so any future "edit/delete entry" UI naturally skips them.
+  type TimelineEntry = {
+    key: string;
+    action: string;
+    actor: string;
+    note: string | null;
+    timestamp: Date;
+    synthetic: boolean;
+  };
+  const auditEntriesSorted = alert.auditEntries; // already orderBy desc
+  const hasRealCreatedEntry = auditEntriesSorted.some(
+    (e) => e.action === "created",
+  );
+  const timelineEntries: TimelineEntry[] = auditEntriesSorted.map((entry) => ({
+    key: entry.id,
+    action: entry.action,
+    actor: entry.actor,
+    note: entry.note,
+    timestamp: entry.timestamp,
+    synthetic: false,
+  }));
+  if (!hasRealCreatedEntry) {
+    timelineEntries.push({
+      key: `synthetic-created-${alert.id}`,
+      action: "created",
+      actor: "system",
+      note: null,
+      timestamp: alert.createdAt,
+      synthetic: true,
+    });
+  }
+  // Re-sort newest-first after the synthetic prepend (the synthetic
+  // "created" row's timestamp is alert.createdAt, which is always older
+  // than the real entries — but doing the sort here keeps the contract
+  // explicit so future changes can't silently land an out-of-order row).
+  timelineEntries.sort(
+    (a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
+  );
 
   return (
     <div className="space-y-6" data-testid="alert-detail" data-alert-id={alert.id}>
@@ -731,7 +801,7 @@ export default async function AlertDetailPage({
           <CardTitle>Audit history</CardTitle>
         </CardHeader>
         <CardContent>
-          {alert.auditEntries.length === 0 ? (
+          {timelineEntries.length === 0 ? (
             <p
               data-testid="alert-detail-audit-empty"
               className="text-sm text-muted-foreground"
@@ -739,37 +809,83 @@ export default async function AlertDetailPage({
               No actions recorded yet.
             </p>
           ) : (
+            // Vertical timeline. The rail is a 2px wide absolute-positioned
+              // background line on the left of the <ol>; each <li> overlaps
+              // the rail with a colored dot positioned at the rail's x-axis.
+              // Because the rail is absolutely positioned with top:0 bottom:0
+              // it auto-stretches to the column height — newest entry at the
+              // top, oldest (always the "created" event) at the bottom — and
+              // the dots sit visually atop the connector line.
             <ol
               data-testid="alert-detail-audit-list"
-              data-audit-count={alert.auditEntries.length}
-              className="space-y-3 text-sm"
+              data-audit-count={timelineEntries.length}
+              data-audit-synthetic-created={hasRealCreatedEntry ? "false" : "true"}
+              className="relative space-y-4 pl-8"
             >
-              {alert.auditEntries.map((entry) => {
+              <span
+                aria-hidden="true"
+                data-testid="alert-detail-audit-rail"
+                className="pointer-events-none absolute left-3 top-2 bottom-2 w-px bg-border"
+              />
+              {timelineEntries.map((entry, idx) => {
                 const actionLabel =
                   AUDIT_ACTION_LABELS[entry.action] ?? entry.action;
-                const timestamp = entry.timestamp.toISOString();
+                const timestampIso = entry.timestamp.toISOString();
+                const timestampDisplay = formatAuditTimestamp(entry.timestamp);
+                const dotClass =
+                  AUDIT_ACTION_DOT_CLASS[entry.action] ??
+                  "bg-slate-400 ring-slate-200 dark:bg-slate-500 dark:ring-slate-800";
                 return (
                   <li
-                    key={entry.id}
+                    key={entry.key}
                     data-testid="alert-detail-audit-entry"
                     data-action={entry.action}
                     data-actor={entry.actor}
-                    className="rounded-md border border-border/60 bg-card/50 px-3 py-2"
+                    data-synthetic={entry.synthetic ? "true" : "false"}
+                    data-position={idx}
+                    className="relative text-sm"
                   >
+                    <span
+                      aria-hidden="true"
+                      data-testid="alert-detail-audit-dot"
+                      data-action={entry.action}
+                      className={`absolute -left-[1.375rem] top-1.5 inline-block h-3 w-3 rounded-full ring-2 ring-offset-0 ${dotClass}`}
+                    />
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="font-medium text-foreground">
+                      <span
+                        className="font-medium text-foreground"
+                        data-testid="alert-detail-audit-action-label"
+                      >
                         {actionLabel}
                       </span>
                       <time
-                        dateTime={timestamp}
+                        dateTime={timestampIso}
+                        data-testid="alert-detail-audit-timestamp"
+                        title={timestampIso}
                         className="font-mono text-xs text-muted-foreground"
                       >
-                        {timestamp}
+                        {timestampDisplay}
                       </time>
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      by <span className="capitalize">{entry.actor}</span>
-                      {entry.note ? <> — {entry.note}</> : null}
+                    <div
+                      className="mt-0.5 text-xs text-muted-foreground"
+                      data-testid="alert-detail-audit-actor-line"
+                    >
+                      by{" "}
+                      <span
+                        className="capitalize"
+                        data-testid="alert-detail-audit-actor"
+                      >
+                        {entry.actor}
+                      </span>
+                      {entry.note ? (
+                        <>
+                          {" — "}
+                          <span data-testid="alert-detail-audit-note">
+                            {entry.note}
+                          </span>
+                        </>
+                      ) : null}
                     </div>
                   </li>
                 );

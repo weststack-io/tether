@@ -939,7 +939,7 @@
         "Verify entries are ordered newest first",
         "Verify the initial 'created' entry from the system is present"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "INGLOG-001",

@@ -338,12 +338,16 @@ describe("DETAIL-006 alert detail escalate button (live UI)", () => {
 
     const auditList = findTagOpening(html, "alert-detail-audit-list");
     expect(auditList).not.toBeNull();
-    expect(auditList!).toContain('data-audit-count="1"');
+    // DETAIL-008: a synthesized "created" pseudo-row from alert.createdAt
+    // is prepended to the timeline whenever the DB has no real created
+    // entry. Count is 2; the escalated action sits newest-first at idx 0.
+    expect(auditList!).toContain('data-audit-count="2"');
 
     const entries = findAllTagOpenings(html, "alert-detail-audit-entry");
-    expect(entries.length).toBe(1);
-    const entry = entries[0]!;
-    expect(entry).toContain('data-action="escalated"');
-    expect(entry).toContain('data-actor="reviewer"');
+    expect(entries.length).toBe(2);
+    expect(entries[0]!).toContain('data-action="escalated"');
+    expect(entries[0]!).toContain('data-actor="reviewer"');
+    expect(entries[1]!).toContain('data-action="created"');
+    expect(entries[1]!).toContain('data-actor="system"');
   });
 });

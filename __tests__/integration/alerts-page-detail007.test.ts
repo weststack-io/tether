@@ -349,13 +349,17 @@ describe("DETAIL-007 alert detail snooze button (live UI)", () => {
 
     const auditList = findTagOpening(html, "alert-detail-audit-list");
     expect(auditList).not.toBeNull();
-    expect(auditList!).toContain('data-audit-count="1"');
+    // DETAIL-008: the timeline synthesizes a "created" pseudo-row from
+    // alert.createdAt whenever the DB lacks a real created entry. Count
+    // is 2; the snoozed action is newest at idx 0, created at idx 1.
+    expect(auditList!).toContain('data-audit-count="2"');
 
     const entries = findAllTagOpenings(html, "alert-detail-audit-entry");
-    expect(entries.length).toBe(1);
-    const entry = entries[0]!;
-    expect(entry).toContain('data-action="snoozed"');
-    expect(entry).toContain('data-actor="reviewer"');
+    expect(entries.length).toBe(2);
+    expect(entries[0]!).toContain('data-action="snoozed"');
+    expect(entries[0]!).toContain('data-actor="reviewer"');
+    expect(entries[1]!).toContain('data-action="created"');
+    expect(entries[1]!).toContain('data-actor="system"');
   });
 
   it("rejects snooze attempts with a past or invalid date", async () => {
