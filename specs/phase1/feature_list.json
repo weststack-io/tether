@@ -719,7 +719,7 @@
         "Verify each run shows timestamp, trigger type, status, and items processed/flagged counts",
         "Verify runs are ordered most recent first"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "LIST-001",

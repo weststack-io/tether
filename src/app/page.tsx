@@ -137,12 +137,53 @@ async function getOpenAlertRegulatorCounts(): Promise<Record<RegulatorKey, numbe
   return counts;
 }
 
+type RecentRun = {
+  id: string;
+  trigger: string;
+  status: string;
+  startedAt: Date;
+  completedAt: Date | null;
+  itemsProcessed: number;
+  itemsFlagged: number;
+};
+
+async function getRecentIngestionRuns(): Promise<RecentRun[]> {
+  return prisma.ingestionRun.findMany({
+    orderBy: { startedAt: "desc" },
+    take: 5,
+    select: {
+      id: true,
+      trigger: true,
+      status: true,
+      startedAt: true,
+      completedAt: true,
+      itemsProcessed: true,
+      itemsFlagged: true,
+    },
+  });
+}
+
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  completed:
+    "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900",
+  running:
+    "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900",
+  failed:
+    "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900",
+};
+
+function formatTimestamp(d: Date): string {
+  return d.toISOString().replace("T", " ").slice(0, 19) + "Z";
+}
+
 export default async function DashboardPage() {
-  const [severityCounts, regulatorCounts, domainCounts] = await Promise.all([
-    getOpenAlertSeverityCounts(),
-    getOpenAlertRegulatorCounts(),
-    getOpenAlertDomainCounts(),
-  ]);
+  const [severityCounts, regulatorCounts, domainCounts, recentRuns] =
+    await Promise.all([
+      getOpenAlertSeverityCounts(),
+      getOpenAlertRegulatorCounts(),
+      getOpenAlertDomainCounts(),
+      getRecentIngestionRuns(),
+    ]);
 
   return (
     <div className="space-y-8">
@@ -246,6 +287,96 @@ export default async function DashboardPage() {
             </Card>
           ))}
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="font-heading text-lg font-semibold">
+            Recent ingestion activity
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Last 5 ingestion runs, most recent first
+          </p>
+        </div>
+        <Card>
+          <CardContent className="p-0">
+            {recentRuns.length === 0 ? (
+              <div
+                className="p-6 text-sm text-muted-foreground"
+                data-testid="recent-runs-empty"
+              >
+                No ingestion runs yet. Trigger one with the button above.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table
+                  className="w-full text-sm"
+                  data-testid="recent-runs-table"
+                >
+                  <thead className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Started</th>
+                      <th className="px-4 py-2 font-medium">Trigger</th>
+                      <th className="px-4 py-2 font-medium">Status</th>
+                      <th className="px-4 py-2 text-right font-medium">
+                        Processed
+                      </th>
+                      <th className="px-4 py-2 text-right font-medium">
+                        Flagged
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentRuns.map((run) => (
+                      <tr
+                        key={run.id}
+                        data-testid="recent-run-row"
+                        data-run-id={run.id}
+                        className="border-b last:border-b-0"
+                      >
+                        <td
+                          className="whitespace-nowrap px-4 py-2 font-mono text-xs tabular-nums"
+                          data-testid="recent-run-started"
+                        >
+                          {formatTimestamp(run.startedAt)}
+                        </td>
+                        <td
+                          className="px-4 py-2 capitalize"
+                          data-testid="recent-run-trigger"
+                        >
+                          {run.trigger}
+                        </td>
+                        <td className="px-4 py-2">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                              STATUS_BADGE_CLASS[run.status] ??
+                              "bg-muted text-muted-foreground ring-border"
+                            }`}
+                            data-testid="recent-run-status"
+                          >
+                            {run.status}
+                          </span>
+                        </td>
+                        <td
+                          className="px-4 py-2 text-right tabular-nums"
+                          data-testid="recent-run-processed"
+                        >
+                          {run.itemsProcessed}
+                        </td>
+                        <td
+                          className="px-4 py-2 text-right tabular-nums"
+                          data-testid="recent-run-flagged"
+                        >
+                          {run.itemsFlagged}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </section>
     </div>
   );
