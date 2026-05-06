@@ -2244,3 +2244,58 @@ Date: 2026-05-06
 - LIST-001..008: alerts list UI session.
 - DETAIL-001..006: alert-detail UI session.
 - Possible follow-up to DASH-002: add a ThemeProvider so dark-mode toasts theme correctly; expose a "currently running" row on the dashboard so a refresh during ingestion still shows the in-flight state.
+
+## Session 52 -- Dashboard Alerts-by-Regulator Cards
+Date: 2026-05-06
+
+### Feature Worked On
+- DASH-003 (priority 52): dashboard alerts-by-regulator breakdown showing counts for SEC, FINRA, CFPB, and OCC. Renders below the existing severity cards as a four-card grid with the regulator's full name as the description.
+- Status: PASSED
+
+### What Was Done
+- Extended src/app/page.tsx with `getOpenAlertRegulatorCounts()` that runs `prisma.alert.findMany({ where: { status: 'open' }, select: { regulatoryItem: { select: { regulator: true } } } })` and aggregates client-side into a {SEC,FINRA,CFPB,OCC} record. Joined through the regulatoryItem relation because Alert has no direct `regulator` field (the relation is the only path from Alert to regulator).
+- Added a four-card grid below the severity cards: each Card has `data-regulator="{KEY}"` and the count `<div>` has `data-testid="regulator-count-{KEY}"`, so the verification test can scrape counts from the rendered HTML without parsing the visual DOM. Section heading "By regulator" + sub-text "Open alerts grouped by source regulator" makes the section purpose visible. Each card's description spells out the regulator's full name (Securities and Exchange Commission, Financial Industry Regulatory Authority, Consumer Financial Protection Bureau, Office of the Comptroller of the Currency).
+- Wired both queries through `Promise.all` in the page server component so the two prisma round-trips happen in parallel rather than serialized.
+- Why open-only (matching DASH-001): the dashboard is operationally a "what's currently pending review" view. Mixing in dismissed/accepted alerts would skew the regulator counts by historical activity rather than current load. This also matches DASH-001's contract; users get a coherent "everything on this dashboard is open work."
+- Why a direct prisma call rather than going through /api/dashboard/stats: the /api/dashboard/stats endpoint counts ALL alerts by regulator (the API contract is locked by Session 38's API-002 tests), while DASH-003 wants open-only. Same trade-off as DASH-001's severity cards. A future refactor could expose `?status=open` on the stats endpoint or extract `getOpenAlertCountsByRegulator()` into src/lib/, but that's out of scope for DASH-003.
+- Why neutral styling for the regulator cards (vs. severity cards' red/amber/blue): regulators don't have a spec-mandated color convention, and color-coding them arbitrarily would imply a hierarchy that doesn't exist (SEC isn't "more severe" than CFPB). Neutral cards keep the visual emphasis on the severity row above.
+- Why `grid-cols-2 sm:grid-cols-4` (vs. severity's `grid-cols-1 sm:grid-cols-3`): with 4 cards the 1-col layout wastes vertical space on narrow viewports; 2-col on mobile fits the four labels (SEC/FINRA/CFPB/OCC are all short) without crowding. At sm and above, all four sit on one row.
+- Authored __tests__/integration/dashboard-page-dash003.test.ts (1 test, ~165 lines) modeled on the DASH-001 harness: captures baseline counts via fetch('/'), seeds 7 open alerts with deliberately asymmetric counts per regulator (SEC:2, FINRA:1, CFPB:3, OCC:1) — each through a full Run→Policy→Chunk→Item→Alert dependency chain, then re-fetches the dashboard HTML, parses the regulator-count testid values, and asserts each equals baseline+seeded. Asymmetric counts catch accidental hard-coding or key mis-mapping that uniform counts (e.g., +1 each) would miss. afterAll deletes everything seeded by id, in dependency order.
+- Decision: did NOT add click-through from the regulator cards to /alerts?regulator=X. The DASH-003 spec only requires display; click-through belongs to a follow-up "filtered alert list link" feature (same scoping as DASH-001).
+- Decision: did NOT add a "total" row or "Other" bucket. The KNOWN_REGULATORS set (SEC/FINRA/CFPB/OCC) covers everything the spec calls out; an unknown regulator value in the DB would be silently dropped, which mirrors how the /api/dashboard/stats endpoint handles the same case.
+- Decision: did NOT add icons or logos for each regulator. Plain typography keeps the bundle small and avoids the licensing question of whose logo can be displayed where.
+
+### Files Modified / Created
+- src/app/page.tsx (added getOpenAlertRegulatorCounts + REGULATOR_CARDS array + the four-card grid below the severity cards; +75 lines net)
+- __tests__/integration/dashboard-page-dash003.test.ts (new, 1 test, ~165 lines)
+- specs/phase1/screenshots/DASH-003.png (new full-page Playwright screenshot showing both card groups)
+- specs/phase1/feature_list.json (DASH-003 passes -> true)
+
+### Testing
+- Verified all 4 DASH-003 acceptance steps:
+  1. Navigate to http://localhost:3000: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector".
+  2. Card group shows alert counts broken down by regulator: Playwright accessibility snapshot shows the four cards under the "By regulator" heading; integration test grep'd `data-testid="regulator-count-{SEC,FINRA,CFPB,OCC}"` literals.
+  3. SEC, FINRA, CFPB, and OCC all represented: snapshot confirms all four labels render; integration test asserts `data-regulator="{REG}"` and `>{REG}<` literals appear in HTML for each.
+  4. Counts match the database: with the DB at 0 open alerts, all four cards display "0" (verified live via Playwright snapshot AND a cross-check fetch('/api/dashboard/stats') -> alertsByRegulator: {SEC:0,FINRA:0,CFPB:0,OCC:0}, which also returns 0 across all four). With 7 seeded open alerts (SEC:2, FINRA:1, CFPB:3, OCC:1), the integration test asserts each card's count goes from baseline to baseline+N, proving the cards dynamically reflect DB state and that the regulator->card mapping is correct (asymmetric seeding catches mis-mapping).
+- Test suite results: `npm test` -> 46 suites / 320 tests passing (was 45 / 319; +1 suite / +1 test for DASH-003). Stable at ~52s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: dashboard root -> 200 with all three data-severity attributes AND all four data-regulator attributes; /api/dashboard/stats -> 200 with alertsByRegulator. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..002 all unchanged.
+- Live Playwright verification:
+  - Navigated to http://localhost:3000/, snapshot shows the new "By regulator" section with four labeled cards (SEC/FINRA/CFPB/OCC) below the existing High/Medium/Low severity cards.
+  - Evaluated `document.querySelectorAll('[data-regulator]')` -> all four keys present in card-order [SEC, FINRA, CFPB, OCC].
+  - Cross-checked DOM counts vs. /api/dashboard/stats.alertsByRegulator -> identical {SEC:0, FINRA:0, CFPB:0, OCC:0} (matching empty DB state).
+  - Saved full-page screenshot to specs/phase1/screenshots/DASH-003.png.
+  - Console: 0 errors, 0 warnings.
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-51: Turbopack returned a 500 with "ChunkLoadError: Failed to load chunk server/chunks/ssr/...page.js" on the first GET / after restarting the dev server with the new page.tsx. Workaround: `rm -rf .next && ./scripts/dev-up.sh`. After the wipe, GET / returned 200 cleanly. Same recurring Turbopack issue Sessions 47-51 have documented; the wipe is more aggressive than the usual `dev-up.sh` restart but was needed this session because the earlier server was holding a stale page.js chunk reference. The wipe also incidentally fixed a corrupt .next/dev/types/routes.d.ts that was failing tsc with TS1128 — same symptom as Session 1 noted.
+- The dashboard page makes two separate prisma calls (severity + regulator). They run in parallel via Promise.all so wall-clock is near-identical to a single call, but the network/DB cost is two round-trips. A future hardening pass could collapse them into one query that fetches alerts with select:{severity:true, regulatoryItem:{select:{regulator:true}}} and aggregates twice in JS, but the readability cost isn't worth it for a dashboard query.
+- The integration test is "live-UI" (depends on the dev server being up on :3000). Same caveat as DASH-001/DASH-002 — the loop driver always has the server running, but a CI run without the dev server would fail this suite. Acceptable for the demo.
+- The screenshot shows 0/0/0/0 because the DB is empty. Same as DASH-001 — the integration test covers the dynamic non-zero case (asymmetric deltas), so the contract is locked. A follow-up "demo-data" seeder feature would make screenshots more visually compelling.
+- An attempt was made during verification to seed demo data via a one-off tsx script for a non-zero screenshot, but tsx couldn't load src/lib/db.ts due to env.ts pulling from process.env at import time outside the Next.js runtime. Using the Jest harness (which already works for the integration test) would have been the cleaner path; deferred to a future "seed dev data" feature.
+
+### Next Priorities
+- DASH-004 (priority 53): dashboard alerts-by-policy-domain breakdown. Same query shape as DASH-003 but joins through Alert.policyChunk.policyDocument.domain. Domain values from the schema: bsa_aml | complaint_handling | fair_lending | reg_e | reg_z | vendor_management | info_security | cip | overdraft | marketing — needs a human-readable label map (the spec calls for "domain names are human-readable").
+- DASH-005 (priority 54): recent ingestion activity (last 5 runs). /api/dashboard/stats already returns `recentIngestion`, and /api/ingestion/log returns full pagination -- DASH-005 is mostly UI for already-served data. Show timestamp / trigger / status / itemsProcessed / itemsFlagged.
+- LIST-001..008: alerts list UI session.
+- DETAIL-001..006: alert-detail UI session.
+- Potential infra: a "demo data seeder" CLI / API route so screenshots and manual demo runs aren't all 0/0/0. The Session 50 and 52 notes have both wished for one.
