@@ -980,7 +980,7 @@
         "Verify alerts span multiple policy domains",
         "Verify each alert has valid citations (regulatoryQuote, policyQuote, sourceUrl, policyReference)"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "SEED-003",
@@ -993,7 +993,7 @@
         "Verify runs have varied statuses (completed, failed)",
         "Verify runs have realistic item counts"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "SEED-004",

@@ -8,6 +8,8 @@ loadEnv({ path: resolve(process.cwd(), ".env.local") });
 loadEnv({ path: resolve(process.cwd(), ".env") });
 
 import { generateEmbeddings } from "../src/lib/ai/embeddings.ts";
+import { seedDemoAlerts } from "../src/lib/seed/demo-alerts.ts";
+import { seedDemoIngestionRuns } from "../src/lib/seed/ingestion-runs.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -140,6 +142,11 @@ async function main(): Promise<void> {
       );
     }
 
+    // Clear dependent rows first to satisfy SQLite foreign-key constraints.
+    await client.execute("DELETE FROM AuditEntry");
+    await client.execute("DELETE FROM Alert");
+    await client.execute("DELETE FROM RegulatoryItem");
+    await client.execute("DELETE FROM IngestionRun");
     await client.execute("DELETE FROM PolicyChunk");
     await client.execute("DELETE FROM PolicyDocument");
 
@@ -195,6 +202,16 @@ async function main(): Promise<void> {
 
     console.log(
       `\nDone: ${policyFiles.length} PolicyDocument rows, ${totalChunks} PolicyChunk rows.`,
+    );
+
+    const demoResult = await seedDemoAlerts(client);
+    console.log(
+      `Seeded ${demoResult.alertIds.length} demo alerts under run ${demoResult.runId}.`,
+    );
+
+    const ingestionResult = await seedDemoIngestionRuns(client);
+    console.log(
+      `Seeded ${ingestionResult.runIds.length} demo ingestion runs for dashboard/ingestion log bootstrap.`,
     );
   } finally {
     await client.close();
