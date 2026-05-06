@@ -2072,3 +2072,56 @@ Date: 2026-05-06
 - DASH-001 (priority 50): dashboard severity cards consume /api/dashboard/stats. UI session -- needs Playwright verification.
 - DASH-002 (priority 51): dashboard "Trigger Ingestion" button -- the natural browser-verification target for API-011 + API-012.
 - DETAIL-001..006 / LIST-001..008: alert-detail and alerts-list UI sessions. All API endpoints are now live.
+
+## Session 49 -- Ingestion Log Endpoint
+Date: 2026-05-06
+
+### Feature Worked On
+- API-013 (priority 49): GET /api/ingestion/log -- paginated list of IngestionRun rows with metrics. Read-only endpoint; sorts startedAt desc; supports `page` (default 1) and `pageSize` (default 20, capped at 100). Response shape: `{ runs, total, page, pageSize, totalPages }`. Each row exposes id, trigger, status, startedAt, completedAt, itemsProcessed, itemsFlagged, itemsSuppressed (and errors -- the JSON column carrying parserErrors/driftErrors, included so the UI can surface failure details without a second round trip).
+- Status: PASSED
+
+### What Was Done
+- Replaced the 10-line stub at src/app/api/ingestion/log/route.ts with a 64-line implementation. Reuses the same `parsePositiveInt` helper shape from src/app/api/alerts/route.ts (parses ?page= and ?pageSize=, falls back to defaults on invalid input, caps pageSize at MAX_PAGE_SIZE=100). Runs `count()` and `findMany({ skip, take, orderBy: { startedAt: "desc" }, select: <metric fields> })` in a Promise.all so total + page rows are issued concurrently. totalPages computed as `total === 0 ? 0 : Math.ceil(total / pageSize)`.
+- Why include `errors` in the select list: the spec verification step lists id/trigger/status/startedAt/completedAt/itemsProcessed/itemsFlagged/itemsSuppressed as required; `errors` is on the IngestionRun model and contains the parser+drift error JSON the ingestion-log UI page will want to render. Including it in the response avoids a second round trip from the UI for failed runs. The select list is explicit (not `select: undefined`) because the IngestionRun model has a `regulatoryItems` relation that we explicitly do NOT want serialized into the response.
+- Why `select` instead of leaving the model relation defaults: a default `findMany` returns scalar columns only (no relations), so omitting `select` would also work. Switching to an explicit allowlist makes the response shape contract visible at the route handler and prevents accidental data leakage if a future migration adds a sensitive column to IngestionRun.
+- Why `orderBy: { startedAt: "desc" }` (not createdAt): IngestionRun has no `createdAt` (the schema uses `startedAt @default(now())` as the row-creation timestamp -- they're equivalent for new rows but `startedAt` is the canonical field the spec verification mentions). The pipeline orchestrator also writes `completedAt` separately, so sorting by startedAt is the user-facing "when was this run kicked off" order.
+- Default pageSize is 20 (matching app_spec.txt § 4 "page?: number (default: 1) / pageSize?: number (default: 20)"), distinct from the alerts list endpoint's 25 default. The MAX_PAGE_SIZE=100 cap matches the alerts route's pattern -- prevents a single request from grabbing the entire IngestionRun table.
+- Authored __tests__/integration/ingestion-log.test.ts (6 tests, ~230 lines). beforeAll seeds 5 IngestionRun rows (`STATUS_A` through `STATUS_E`) with strictly-increasing startedAt timestamps and sentinel statuses ("ing-log-test-a-completed" etc.) so assertions can filter the response down to just this suite's seeds without touching pre-existing rows from API-011/012's live curl runs. afterAll deletes the seeded ids.
+- Test cases: (1) "default response shape" -- GET / no query params, asserts 200 + array `runs` + numeric total/page/pageSize/totalPages, asserts every returned row has the spec-required fields with correct types, asserts totalPages = ceil(total/pageSize); (2) "ordered by startedAt desc" -- pulls pageSize=100, filters to seeded rows, asserts order is E->D->C->B->A (newest first), AND asserts the full unfiltered response is monotonically descending; (3) "metrics surface correctly" -- spot-checks itemsProcessed/itemsFlagged/itemsSuppressed/trigger/completedAt for three of the seeded rows, including the running-row case (completedAt: null) which round-trips as null on the response; (4) "pagination" -- pageSize=2 across two pages, asserts page1.runs.length === page2.runs.length === 2, totals equal, totalPages = ceil(total/2), no overlap between pages, descending order across both pages combined; (5) "invalid pagination falls back" -- ?page=abc&pageSize=-5 returns page=1 + pageSize=20; (6) "page beyond totalPages" -- empty `runs` but stable total + echoed page number.
+- Decision: did NOT add filtering by trigger/status to the route. The spec only mandates pagination + ordering. The ingestion-log UI page (yet to land) may want filter chips, but they belong to that UI session.
+- Decision: did NOT add a unit test. Route is parse + count + findMany; integration test exercises every code path; no extractable pure logic beyond `parsePositiveInt` (already covered transitively by the alerts list/sort/filter test suites).
+- Decision: did NOT add Playwright verification. API-013 is a pure backend endpoint; the ingestion-log page (yet to land) is the natural place for browser verification.
+- Decision: included `pageSize` in the response shape (the spec snippet only lists runs/total/page/totalPages) for parity with the alerts list endpoint and so paginating UI can echo back its current page-size selection without round-tripping the query string.
+
+### Files Modified / Created
+- src/app/api/ingestion/log/route.ts (rewritten from 10-line stub to 64-line handler with pagination + descending sort + explicit select)
+- __tests__/integration/ingestion-log.test.ts (new, 6 tests, ~230 lines)
+- specs/phase1/feature_list.json (API-013 passes -> true)
+
+### Testing
+- Verified all 5 API-013 acceptance steps:
+  1. Create several ingestion runs with varied statuses and metrics: beforeAll creates 5 IngestionRun rows with three statuses and varied trigger/itemsProcessed/itemsFlagged/itemsSuppressed combinations; live DB also has 8 real runs from Sessions 47/48 + the dev environment.
+  2. Send GET to /api/ingestion/log: tests via direct GET handler import; live curl with `curl /api/ingestion/log?pageSize=3` returned 200 and the expected JSON.
+  3. Response contains runs array with required fields: test (1) loops over every returned row asserting id/trigger/status/startedAt/completedAt/itemsProcessed/itemsFlagged/itemsSuppressed exist with correct types; live response carries all of them (e.g., the API-011 runId from Session 47 surfaces with itemsProcessed=0, the Session 48 SEC press-releases run surfaces with itemsProcessed=1 + sourceUrl-resolved drift errors in the errors column).
+  4. Pagination works: test (4) covers page=1/2 with pageSize=2; live curl `curl /api/ingestion/log?page=2&pageSize=2` -> page=2, pageSize=2, total=8, totalPages=4, len(runs)=2. Tests (5) and (6) cover the invalid-input and beyond-last-page edge cases.
+  5. Runs ordered by startedAt descending: test (2) asserts both the seeded subset (E->D->C->B->A) AND the full unfiltered response (every adjacent pair is monotonically desc).
+- Test suite results: `npm test` -> 43 suites / 315 tests passing (was 42 / 309; +1 suite / +6 tests for API-013). Stable at ~45s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: /api/health -> 200, /api/alerts?pageSize=1 -> 200, /api/dashboard/stats -> 200, /api/ingestion/log -> 200 (stub-shape) -- all four still respond after restart. API-001..012, INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007 all unchanged.
+- Live curl verification: `./scripts/dev-up.sh` to restart the dev server (the prior Turbopack route cache from Sessions 47/48 still served the old 10-line stub even after the file was rewritten on disk -- same workaround), then:
+  - `curl /api/ingestion/log?pageSize=3` -> 200 + 3 real rows, each with id/trigger/status/startedAt/completedAt/itemsProcessed/itemsFlagged/itemsSuppressed/errors. Newest row first (the API-012 SEC press-releases run from Session 48), followed by the failed 2025-9999-test run, then the Session 46 sample run.
+  - `curl /api/ingestion/log?page=2&pageSize=2` -> page=2, pageSize=2, total=8, totalPages=4, runs.length=2. Pagination math holds.
+- No Playwright verification: API-013 is a pure backend endpoint with no UI surface. Browser verification will land with the ingestion-log page UI session (yet to be specified beyond the existing /ingestion route stub).
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-48: Turbopack does not pick up route-handler changes via HMR cleanly. `./scripts/dev-up.sh` resolved it.
+- The 500 error path (try/catch on prisma.ingestionRun.count / .findMany failure) is untested. Same rationale as API-002..012: mocking @/lib/db is brittle and the count+findMany are single Prisma calls.
+- The route's pageSize cap (MAX_PAGE_SIZE=100) is opinionated; the spec doesn't specify a max. If a future client wants the full IngestionRun history in one call (e.g., for an "export to CSV" feature), they'd need either a higher cap, an "all=true" flag, or a streaming endpoint. For the demo, 100 is plenty.
+- The `errors` column is included in the response as a raw JSON string (the column type), not pre-parsed. Clients that want the parserErrors/driftErrors structure will need to JSON.parse it. Pre-parsing at the route would either always succeed (the orchestrator always writes valid JSON) or fail loud if future code wrote a non-JSON string. Leaving it as-is is the lower-risk choice for the demo.
+- The descending-by-startedAt sort uses millisecond precision. If two runs happen within the same ms (extremely unlikely in single-process dev, but possible under future parallel triggers), order is undefined relative to each other. A stable secondary sort on `id` (cuid is roughly time-ordered) would be the natural hardening pass.
+
+### Next Priorities
+- DASH-001 (priority 50): dashboard severity cards consume /api/dashboard/stats. UI session -- needs Playwright verification. The stats API has been live since Session 38; this is purely a UI render + visual check.
+- DASH-002 (priority 51): dashboard "Trigger Ingestion" button -- the natural browser-verification target for API-011 + API-012. Once DASH-001 lands, this UI button just needs a fetch POST + loading spinner + success toast.
+- LIST-001..008: alerts list UI session (consumes /api/alerts with all the filters/sort that API-003..005 already support).
+- DETAIL-001..006: alert-detail UI session (consumes /api/alerts/:id from API-006 and the action endpoints API-007..010).
+- All API endpoints (API-001..013) are now live. The remaining feature work is UI sessions plus any infrastructure features (e.g., the scheduler stub) that the feature list hasn't surfaced.
