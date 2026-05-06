@@ -573,7 +573,7 @@
         "Verify an AuditEntry was created with actor='reviewer', action='accepted'",
         "Verify beforeState contains 'open' and afterState contains 'accepted'"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-008",
