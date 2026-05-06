@@ -26,6 +26,7 @@ import { fetchLatest as fetchCfpb } from "@/lib/ingestion/parsers/cfpb";
 import { fetchLatest as fetchFinra } from "@/lib/ingestion/parsers/finra";
 import { fetchLatest as fetchOcc } from "@/lib/ingestion/parsers/occ";
 import { fetchLatest as fetchSec } from "@/lib/ingestion/parsers/sec";
+import { fetchSingleRegulatoryItem } from "@/lib/ingestion/single-url";
 import type {
   DocumentType,
   IngestionTrigger,
@@ -77,6 +78,14 @@ export interface RunIngestionOptions {
   // runIngestion as a fire-and-forget; the orchestrator drives the row
   // through completion (or failure) the rest of the way.
   runId?: string;
+  // Single-URL ingestion (API-012): when set, the orchestrator skips the
+  // regulator-wide RSS fan-out and instead fetches just this one URL,
+  // producing at most one RegulatoryItem. The dedupe + persist + drift
+  // detection downstream stages are unchanged.
+  url?: string;
+  // Test seam matching `parsers`: lets integration tests inject a mock
+  // single-URL fetcher without hitting the network.
+  singleUrlFetcher?: (url: string) => Promise<RawRegulatoryItem | null>;
 }
 
 export async function runIngestion(
@@ -98,21 +107,52 @@ export async function runIngestion(
   let parserFetchFailures = 0;
 
   try {
-    const settled = await Promise.allSettled(parsers.map((p) => p.fetch()));
-
     const collected: RawRegulatoryItem[] = [];
-    settled.forEach((res, i) => {
-      const regulator = parsers[i].regulator;
-      if (res.status === "fulfilled") {
-        collected.push(...res.value);
-      } else {
-        const message =
-          res.reason instanceof Error ? res.reason.message : String(res.reason);
-        parserErrors.push({ regulator, error: message });
-        parserFetchFailures += 1;
-        console.warn(`[runIngestion] parser ${regulator} failed: ${message}`);
+    let singleUrlFetchFailed = false;
+
+    if (options.url) {
+      // Single-URL path (API-012): one fetch instead of the regulator fan-out.
+      const fetcher = options.singleUrlFetcher ?? fetchSingleRegulatoryItem;
+      try {
+        const raw = await fetcher(options.url);
+        if (raw) {
+          collected.push(raw);
+        } else {
+          singleUrlFetchFailed = true;
+          parserErrors.push({
+            regulator: "SEC",
+            error: `single-url fetch ${options.url} returned no item`,
+          });
+          console.warn(
+            `[runIngestion] single-url fetch ${options.url} returned null`,
+          );
+        }
+      } catch (err) {
+        singleUrlFetchFailed = true;
+        const message = err instanceof Error ? err.message : String(err);
+        parserErrors.push({
+          regulator: "SEC",
+          error: `single-url fetch ${options.url} threw: ${message}`,
+        });
+        console.warn(
+          `[runIngestion] single-url fetch ${options.url} threw: ${message}`,
+        );
       }
-    });
+    } else {
+      const settled = await Promise.allSettled(parsers.map((p) => p.fetch()));
+      settled.forEach((res, i) => {
+        const regulator = parsers[i].regulator;
+        if (res.status === "fulfilled") {
+          collected.push(...res.value);
+        } else {
+          const message =
+            res.reason instanceof Error ? res.reason.message : String(res.reason);
+          parserErrors.push({ regulator, error: message });
+          parserFetchFailures += 1;
+          console.warn(`[runIngestion] parser ${regulator} failed: ${message}`);
+        }
+      });
+    }
 
     const seenInBatch = new Set<string>();
     const uniqueRaw: RawRegulatoryItem[] = [];
@@ -183,10 +223,12 @@ export async function runIngestion(
     // and is a true failure. Partial parser failures (1..n-1 of n) keep
     // status='completed' per the failed-isolation contract -- one parser
     // going down should not poison the rest of the run.
-    const allParsersFailed = parserFetchFailures === parsers.length;
-    const finalStatus: "completed" | "failed" = allParsersFailed
-      ? "failed"
-      : "completed";
+    //
+    // The single-URL path has only one source: failing it makes the run
+    // 'failed' for the same "produced nothing" reason.
+    const allParsersFailed = !options.url && parserFetchFailures === parsers.length;
+    const finalStatus: "completed" | "failed" =
+      allParsersFailed || singleUrlFetchFailed ? "failed" : "completed";
 
     const finalRun = await prisma.ingestionRun.update({
       where: { id: run.id },

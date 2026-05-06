@@ -639,7 +639,7 @@
         "Verify the run processes only the specified URL",
         "Verify the resulting regulatory item has the correct sourceUrl"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "API-013",
