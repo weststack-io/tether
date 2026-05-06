@@ -966,7 +966,7 @@
         "Verify the run shows a 'failed' status badge",
         "Verify error details are visible or expandable"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "SEED-002",
