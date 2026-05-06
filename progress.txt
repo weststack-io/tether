@@ -2358,3 +2358,69 @@ Date: 2026-05-06
 - LIST-001..008: alerts list UI session. LIST-001 is the table shell with sort; LIST-002..006 are the per-field filters (regulator, severity, status, domain, date range); LIST-007..008 cover pagination and "view detail" link. The /api/alerts endpoint (API-003..006) is fully built and tested, so the LIST work is pure UI consumption.
 - DETAIL-001..006: alert-detail UI session.
 - Potential infra: a "demo data seeder" CLI / API route so screenshots and manual demo runs aren't all 0/0/0. Sessions 50/52/53 have all wished for one.
+
+## Session 54 -- Dashboard Recent Ingestion Activity
+Date: 2026-05-06
+
+### Feature Worked On
+- DASH-005 (priority 54): dashboard "Recent ingestion activity" section showing the last 5 runs in a table with timestamp / trigger / status / processed / flagged columns, ordered most recent first.
+- Status: PASSED
+
+### What Was Done
+- Extended src/app/page.tsx with `getRecentIngestionRuns()` returning `prisma.ingestionRun.findMany({ orderBy:{ startedAt:'desc' }, take:5, select:{ id,trigger,status,startedAt,completedAt,itemsProcessed,itemsFlagged } })`. Selected only the fields the table renders so the round-trip is minimal.
+- Added a fourth `Promise.all` leg to `DashboardPage()` so the four queries (severity / regulator / domain / recent runs) run in parallel.
+- Added a `formatTimestamp(d)` helper that produces `YYYY-MM-DD HH:MM:SSZ` (UTC, ISO-flavored). Server-rendered timestamp formatting is deterministic and avoids the SSR/CSR locale mismatch you'd get from `toLocaleString()` (which on the server uses the host's locale and on the client uses the browser's, leading to React hydration warnings on locale-mismatched setups). Using a fixed UTC string sidesteps that entirely and makes the integration test's regex match easy.
+- Added a `STATUS_BADGE_CLASS` map for completed (emerald) / running (blue) / failed (red) status pills with light+dark variants. Unknown statuses fall through to a neutral muted style — defensive, since `status` is a free-form string column in the schema.
+- Rendered a new `<section>` below the policy-domain grid: heading "Recent ingestion activity" + sub-text "Last 5 ingestion runs, most recent first" + a Card wrapping a `<table data-testid="recent-runs-table">` with five columns (Started, Trigger, Status, Processed, Flagged). Each row has `data-testid="recent-run-row"` and `data-run-id={id}`, plus per-cell `data-testid` markers (recent-run-started / -trigger / -status / -processed / -flagged) so the integration test can scrape values without parsing the visual DOM.
+- Empty-state branch: when `recentRuns.length === 0` the Card renders a `data-testid="recent-runs-empty"` placeholder ("No ingestion runs yet. Trigger one with the button above.") instead of an empty table. Avoids a header-only table-shell which is visually confusing.
+- Why a `<table>` rather than a stacked Card grid like the severity/regulator/domain sections: the recent-activity row has 5 attributes per record (timestamp + trigger + status + processed + flagged); 5-card stacks per row would force a lot of label repetition ("Trigger:", "Status:", etc.) and burn vertical space. A table aligns the same field across rows and is the conventional shape for "list of runs" UIs (it also matches what /ingestion would presumably look like when LIST-style views land).
+- Why DESC ordering by `startedAt` (not `completedAt`): a still-running row has no completedAt yet; ordering by startedAt keeps the in-flight run visible at the top instead of pushing it off the table because of NULL comparison rules. Matches the /api/dashboard/stats endpoint's behavior.
+- Why `take:5` directly in the query (vs. fetching all and slicing): avoids materializing every historical row when the DB grows large. SQLite is fine here today, but the contract should be "take 5 from the DB."
+- Why a server-component direct prisma call rather than going through /api/dashboard/stats: same trade-off as DASH-001..004 — the API endpoint serves a different set of consumers (the trigger button polls /api/ingestion/log, not /stats) and shaping a server-component fetch through localhost would just add latency. Direct prisma is simpler and the test pins the contract.
+- Why uppercase column headers via `text-xs uppercase tracking-wide`: matches the conventional table-header look (and the row data is mixed-case + tabular numerics), so the headers visually recede and the data dominates.
+- Why timestamps in `font-mono text-xs tabular-nums`: monospace + tabular-nums keeps the YYYY-MM-DD HH:MM:SS column visually aligned across rows; the smaller text size keeps the timestamp from dominating the row width.
+- Why a status pill (vs. plain text "completed"): visual scannability — at a glance, one or two failed runs in the list need to jump out without reading every word.
+- Authored __tests__/integration/dashboard-page-dash005.test.ts (1 test, ~190 lines). Seeds 6 IngestionRun rows whose `startedAt` values are anchored to `Date.now() + 1 year` so they always sort above any pre-existing rows on the dev DB. The five newest must appear in DESC order; the sixth (oldest of the seeded set) must NOT appear. Per-row asymmetric counts (1/0, 5/2, 12/4, 7/1, 3/3) catch hard-coding or column mis-mapping. Mixed triggers (manual + scheduled) and mixed statuses (completed + failed) lock those columns too. afterAll deletes only the seeded ids.
+- Decision: did NOT add click-through from a row to /ingestion/<id>. The DASH-005 spec only requires display; row navigation belongs to a follow-up "ingestion detail" feature that doesn't yet have a stub.
+- Decision: did NOT show `completedAt` or `errors` columns. The spec calls for "timestamp, trigger type, status, items processed/flagged" — adding more columns would crowd the table on narrow viewports without adding spec-required value.
+- Decision: did NOT show `itemsSuppressed`. Same scope-control reason as above; the spec only mentions "items processed/flagged."
+- Decision: did NOT add a "view all" link to /ingestion. The sidebar's "Ingestion Log" link already serves that purpose; a duplicate inline link would be redundant.
+- Decision: kept the timestamp format as UTC (with the trailing "Z") rather than localized. SSR/CSR locale parity matters more than fancy formatting for a server-rendered table.
+- Decision: did NOT extract the recent-runs section into src/components/dashboard/RecentActivity.tsx. The component listed in app_spec.txt's directory tree is aspirational; for a single-use server-rendered table with no client-side state, inlining keeps the file readable. Extraction belongs to a future visual-polish session that touches multiple consumers.
+
+### Files Modified / Created
+- src/app/page.tsx (added RecentRun type, getRecentIngestionRuns(), STATUS_BADGE_CLASS, formatTimestamp helper, the Promise.all leg, and the "Recent ingestion activity" section with a 5-column table + empty-state branch; +120 lines net)
+- __tests__/integration/dashboard-page-dash005.test.ts (new, 1 test, ~190 lines)
+- specs/phase1/screenshots/DASH-005.png (new full-page Playwright screenshot showing all four card groups + the recent-runs table)
+- specs/phase1/feature_list.json (DASH-005 passes -> true)
+
+### Testing
+- Verified all 4 DASH-005 acceptance steps:
+  1. Navigate to http://localhost:3000: Playwright navigated; HTTP 200; page title "Tether — Regulatory Drift Detector".
+  2. Recent activity section shows up to 5 ingestion runs: Playwright snapshot + DOM eval shows exactly 5 `data-testid="recent-run-row"` entries on the live DB; the integration test seeds 6 and asserts only 5 render (cap enforced).
+  3. Each run shows timestamp, trigger type, status, and items processed/flagged: DOM eval returned `{started, trigger, status, processed, flagged}` for all 5 rows on the live DB; integration test asserts each cell's value matches what was seeded for the corresponding run.
+  4. Runs are ordered most recent first: cross-checked DOM order against `/api/dashboard/stats.recentIngestion` (which is also DESC by startedAt) — exact match across all 5 runIds. Integration test seeds with monotonically increasing startedAt values and asserts the rendered order is the reverse (newest first).
+- Test suite results: `npm test` -> 48 suites / 322 tests passing (was 47 / 321; +1 suite / +1 test for DASH-005). Stable at ~53s.
+- Regression: `npx tsc --noEmit` -> zero errors. Pre-flight curl regression: dashboard root -> 200 with all data-severity, data-regulator, data-domain, AND new data-testid="recent-runs-table" + 5 data-testid="recent-run-row" rows; /api/dashboard/stats -> 200. INFRA-001..004, LAYOUT-001..002, CORPUS-001..010, SEED-001, EMBED-001..002, VECTORS-001, RETRIEVE-001, LLM-001..002, CLASSIFY-001..002, CITE-001, SCORE-001, PIPE-001..002, INGEST-001..007, API-001..013, DASH-001..004 all unchanged.
+- Live Playwright verification:
+  - Navigated to http://localhost:3000/, snapshot shows the new "Recent ingestion activity" section with a 5-row table below the existing severity / regulator / domain card groups.
+  - Evaluated `document.querySelectorAll('[data-testid="recent-run-row"]')` -> 5 rows, each with `runId / started / trigger / status / processed / flagged` populated.
+  - Cross-checked DOM order against fetch('/api/dashboard/stats').recentIngestion -> identical 5-id array, confirming DESC ordering.
+  - Saved full-page screenshot to specs/phase1/screenshots/DASH-005.png — shows the complete dashboard layout including the new section with 5 actual ingestion runs from the dev DB (the most recent had 1 item processed; the rest 0).
+  - Console: 0 errors, 0 warnings.
+
+### Blockers / Issues
+- Dev-server cache staleness as noted in Sessions 44-53: `./scripts/dev-up.sh` was needed once after editing src/app/page.tsx to flush the Turbopack page chunk; the new section's data-testid markers weren't appearing on the first GET / after the edit. Same recurring issue, same documented workaround.
+- The dashboard page now makes four parallel prisma queries (severity / regulator / domain / recent runs). Wall-clock is fine because of Promise.all, but as the dashboard grows it might be worth collapsing the alert-counts queries into one selector that fetches `{severity, regulatoryItem:{regulator}, policyChunk:{policyDocument:{domain}}}` once and aggregates three times in JS — same readability/perf trade-off the prior sessions noted, deliberately deferred.
+- The integration test is "live-UI" (depends on the dev server being up on :3000). Same caveat as DASH-001..004.
+- Timestamps are server-rendered as UTC. A future enhancement could use a small client component to convert to the viewer's local timezone, but that adds a hydration round-trip and a "00:00 in UTC vs my time" mental model split. UTC is fine for the demo.
+- The empty-state branch (`data-testid="recent-runs-empty"`) is currently never exercised on the dev DB because there are 5+ historical runs. The integration test exercises the populated path only — adding a separate "wipe DB then verify empty-state renders" test would have to coordinate against any in-flight seeding from other tests, which isn't worth the flakiness for a placeholder string.
+- Free-form `status` column: the schema docs it as `running | completed | failed` but it's just a String, so a typo in any caller would render with the neutral fallback style instead of a colored pill. Not a regression — same caveat applies to /api/ingestion/log — but a future Zod-schema enforcement at the orchestrator boundary would harden this.
+
+### Next Priorities
+- DASH-005 is the LAST dashboard feature in the priority list. The dashboard surface is now complete: severity cards (DASH-001), trigger button (DASH-002), regulator cards (DASH-003), policy-domain cards (DASH-004), recent activity (DASH-005).
+- LIST-001 (priority 55): Alert list page — sortable table with columns Severity / Classification / Regulator / Policy Domain / Date Detected / Status. The /api/alerts endpoint (API-003..006) is fully built and tested, so the LIST work is pure UI consumption. LIST-001 is the table shell + initial render + at least one column-header sort interaction.
+- LIST-002..006: per-field filters (regulator, severity, status, domain, date range). Each is a separate priority; LIST-002 specifically is regulator filtering.
+- LIST-007..008: pagination controls and "view detail" navigation row link.
+- DETAIL-001..006: alert-detail page session.
+- Potential infra (still wished-for): a "demo data seeder" CLI / API route so screenshots aren't dominated by zeros for severity / regulator / domain. With the demo dashboard now feature-complete, a non-zero seeded screenshot would show the design at its best.
