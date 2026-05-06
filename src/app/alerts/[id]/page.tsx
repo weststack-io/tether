@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import prisma from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { acceptAlert } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,37 @@ const SEVERITY_BADGE_CLASS: Record<string, string> = {
   medium:
     "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900",
   low: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900",
+};
+
+// Mirrors the alerts list table palette (src/app/alerts/page.tsx) so the
+// list-view → detail-view transition is visually continuous on status.
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  open: "bg-slate-100 text-slate-800 ring-slate-200 dark:bg-slate-800/60 dark:text-slate-200 dark:ring-slate-700",
+  accepted:
+    "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900",
+  dismissed:
+    "bg-zinc-100 text-zinc-600 ring-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-300 dark:ring-zinc-700",
+  escalated:
+    "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900",
+  snoozed:
+    "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  open: "Open",
+  accepted: "Accepted",
+  dismissed: "Dismissed",
+  escalated: "Escalated",
+  snoozed: "Snoozed",
+};
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  created: "Created",
+  accepted: "Accepted",
+  dismissed: "Dismissed",
+  escalated: "Escalated",
+  snoozed: "Snoozed",
+  reopened: "Reopened",
 };
 
 const CLASSIFICATION_BADGE_CLASS: Record<string, string> = {
@@ -90,6 +122,10 @@ async function loadAlert(id: string) {
       policyChunk: {
         include: { policyDocument: true },
       },
+      // DETAIL-004 step 5 verifies "a new audit entry appears in the audit
+      // history" after Accept. DETAIL-008 will add the polished timeline;
+      // for now we render a minimal newest-first list under the action bar.
+      auditEntries: { orderBy: { timestamp: "desc" } },
     },
   });
 }
@@ -123,6 +159,11 @@ export default async function AlertDetailPage({
   const severityClass =
     SEVERITY_BADGE_CLASS[alert.severity] ??
     "bg-muted text-muted-foreground ring-border";
+  const statusClass =
+    STATUS_BADGE_CLASS[alert.status] ??
+    "bg-muted text-muted-foreground ring-border";
+  const statusLabel = STATUS_LABELS[alert.status] ?? alert.status;
+  const isOpen = alert.status === "open";
   const confidenceBarClass =
     CONFIDENCE_BAR_CLASS[alert.classification] ?? "bg-primary";
   // Clamp into [0, 1] in case a malformed seed/classifier output ever sneaks
@@ -145,6 +186,7 @@ export default async function AlertDetailPage({
         data-testid="alert-detail-summary"
         data-classification={alert.classification}
         data-severity={alert.severity}
+        data-status={alert.status}
         data-confidence={confidenceFraction}
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -161,6 +203,13 @@ export default async function AlertDetailPage({
             className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ${severityClass}`}
           >
             {alert.severity} severity
+          </span>
+          <span
+            data-testid="alert-detail-status-badge"
+            data-status={alert.status}
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${statusClass}`}
+          >
+            {statusLabel}
           </span>
         </div>
 
@@ -370,6 +419,97 @@ export default async function AlertDetailPage({
               </dd>
             </div>
           </dl>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="alert-detail-actions">
+        <CardHeader>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            Reviewer actions
+          </div>
+          <CardTitle>Action bar</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={acceptAlert.bind(null, alert.id)}
+            data-testid="alert-detail-accept-form"
+            className="flex flex-wrap items-center gap-2"
+          >
+            <button
+              type="submit"
+              data-testid="alert-detail-accept-button"
+              data-action="accept"
+              disabled={!isOpen}
+              aria-disabled={!isOpen}
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-600/40 disabled:text-white/70"
+            >
+              Accept
+            </button>
+            {!isOpen ? (
+              <span
+                data-testid="alert-detail-accept-locked-hint"
+                className="text-xs text-muted-foreground"
+              >
+                Already {statusLabel.toLowerCase()}; reopen to accept again.
+              </span>
+            ) : null}
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="alert-detail-audit">
+        <CardHeader>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            History
+          </div>
+          <CardTitle>Audit history</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {alert.auditEntries.length === 0 ? (
+            <p
+              data-testid="alert-detail-audit-empty"
+              className="text-sm text-muted-foreground"
+            >
+              No actions recorded yet.
+            </p>
+          ) : (
+            <ol
+              data-testid="alert-detail-audit-list"
+              data-audit-count={alert.auditEntries.length}
+              className="space-y-3 text-sm"
+            >
+              {alert.auditEntries.map((entry) => {
+                const actionLabel =
+                  AUDIT_ACTION_LABELS[entry.action] ?? entry.action;
+                const timestamp = entry.timestamp.toISOString();
+                return (
+                  <li
+                    key={entry.id}
+                    data-testid="alert-detail-audit-entry"
+                    data-action={entry.action}
+                    data-actor={entry.actor}
+                    className="rounded-md border border-border/60 bg-card/50 px-3 py-2"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="font-medium text-foreground">
+                        {actionLabel}
+                      </span>
+                      <time
+                        dateTime={timestamp}
+                        className="font-mono text-xs text-muted-foreground"
+                      >
+                        {timestamp}
+                      </time>
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      by <span className="capitalize">{entry.actor}</span>
+                      {entry.note ? <> — {entry.note}</> : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
         </CardContent>
       </Card>
     </div>

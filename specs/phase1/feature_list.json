@@ -880,7 +880,7 @@
         "Verify the status badge changes to reflect the new status",
         "Verify a new audit entry appears in the audit history"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DETAIL-005",
