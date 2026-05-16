@@ -41,5 +41,8 @@
     "tailwindcss": "^4",
     "ts-jest": "^29.4.9",
     "typescript": "^5"
+  },
+  "optionalDependencies": {
+    "lightningcss-win32-x64-msvc": "^1.32.0"
   }
 }
